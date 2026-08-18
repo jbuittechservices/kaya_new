@@ -1,0 +1,275 @@
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { ClipboardList, CheckCircle2, CreditCard, Radio, MapPin, Phone, MessageCircle } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
+import { Avatar, Card } from '../../components/ui/Misc'
+import Button from '../../components/ui/Button'
+import LiveMap from '../../components/ui/LiveMap'
+import { formatNaira } from '../../utils/format'
+import { api } from '../../lib/api'
+import { getSocket } from '../../lib/socket'
+
+const ONBOARDING_STEPS = [
+  { key: 'personalInfo', step: 1, title: 'Personal information', desc: 'Fill out your personal details to get onboarded', icon: ClipboardList },
+  { key: 'documents', step: 2, title: 'Document verification', desc: 'Upload your valid ID and license', icon: CheckCircle2 },
+  { key: 'guarantor', step: 3, title: 'Guarantor details', desc: "Add a guarantor so admin can approve your account", icon: CreditCard },
+]
+
+const STAGE_LABEL = {
+  enroute: { title: 'Head to pickup point', cta: 'Confirm pickup' },
+  arrived: { title: 'At pickup — collect the package', cta: 'Start delivery' },
+  in_transit: { title: 'Delivering to customer', cta: 'Mark as delivered' },
+}
+
+export default function DriverHome() {
+  const { user, refreshUser } = useAuth()
+  const navigate = useNavigate()
+  const [online, setOnline] = useState(false)
+  const [queue, setQueue] = useState([])
+  const [active, setActive] = useState(null)
+  const [earnings, setEarnings] = useState({ todayEarnings: 0, tripsToday: 0 })
+  const [busy, setBusy] = useState(false)
+
+  const onboarding = user?.onboarding || {}
+  const stepIncomplete = ONBOARDING_STEPS.some((s) => !onboarding[s.key])
+
+  useEffect(() => {
+    api.get('/api/drivers/earnings').then(setEarnings).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const socket = getSocket()
+    if (!socket) return
+
+    function onIncoming(order) {
+      setQueue((q) => (q.some((o) => o.id === order.id) ? q : [...q, order]))
+    }
+    function onTaken({ orderId }) {
+      setQueue((q) => q.filter((o) => o.id !== orderId))
+    }
+
+    socket.on('order:incoming', onIncoming)
+    socket.on('order:taken', onTaken)
+    return () => {
+      socket.off('order:incoming', onIncoming)
+      socket.off('order:taken', onTaken)
+    }
+  }, [])
+
+  // Report real device location to the customer while a delivery is active
+  useEffect(() => {
+    if (!active || !navigator.geolocation) return
+    const socket = getSocket()
+    if (!socket) return
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        socket.emit('driver:location', {
+          orderId: active.id,
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        })
+      },
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+    )
+    return () => navigator.geolocation.clearWatch(watchId)
+  }, [active?.id])
+
+  function toggleOnline() {
+    const socket = getSocket()
+    const next = !online
+    setOnline(next)
+    if (socket) socket.emit(next ? 'driver:online' : 'driver:offline')
+    if (!next) setQueue([])
+  }
+
+  async function acceptRequest(order) {
+    setBusy(true)
+    try {
+      const { order: updated, customer, conversationId } = await api.post(`/api/orders/${order.id}/accept`)
+      setActive({ ...updated, customer, conversationId })
+      setQueue((q) => q.filter((o) => o.id !== order.id))
+    } catch (err) {
+      setQueue((q) => q.filter((o) => o.id !== order.id))
+      alert(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function declineRequest(orderId) {
+    setQueue((q) => q.filter((o) => o.id !== orderId))
+  }
+
+  async function advance() {
+    if (!active) return
+    setBusy(true)
+    try {
+      const { order } = await api.post(`/api/orders/${active.id}/advance`)
+      if (order.status === 'delivered') {
+        setActive(null)
+        api.get('/api/drivers/earnings').then(setEarnings).catch(() => {})
+        refreshUser()
+      } else {
+        setActive((a) => ({ ...a, ...order }))
+      }
+    } catch (err) {
+      alert(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const incoming = queue[0]
+
+  return (
+    <div className="min-h-screen bg-cream-100 pb-10">
+      <div className="flex items-center justify-between px-5 pt-6">
+        <div className="flex items-center gap-3">
+          <Avatar name={user?.name} size={48} />
+          <div>
+            <p className="text-sm text-slate-muted">Welcome back,</p>
+            <p className="text-base font-extrabold text-navy-950">{user?.name}</p>
+          </div>
+        </div>
+        <button
+          onClick={toggleOnline}
+          className={`tap flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold ${online ? 'bg-success/15 text-success' : 'bg-navy-900/8 text-navy-900/50'}`}
+        >
+          <span className={`h-2 w-2 rounded-full ${online ? 'bg-success' : 'bg-navy-900/40'}`} />
+          {online ? 'Online' : 'Offline'}
+        </button>
+      </div>
+
+      <div className="mt-5 grid grid-cols-2 gap-3 px-5">
+        <Card>
+          <p className="text-xs text-slate-muted">Today's earnings</p>
+          <p className="mt-1 text-xl font-extrabold text-navy-950">{formatNaira(earnings.todayEarnings)}</p>
+        </Card>
+        <Card>
+          <p className="text-xs text-slate-muted">Trips completed</p>
+          <p className="mt-1 text-xl font-extrabold text-navy-950">{earnings.tripsToday}</p>
+        </Card>
+      </div>
+
+      {stepIncomplete && (
+        <div className="mt-6 px-5">
+          <h2 className="text-lg font-extrabold text-navy-950">Get ready to ride and earn!</h2>
+          <p className="mt-1 text-sm text-slate-muted">Complete your setup in three simple steps.</p>
+          <div className="mt-4 space-y-3">
+            {ONBOARDING_STEPS.map((s) => {
+              const done = !!onboarding[s.key]
+              const Icon = done ? CheckCircle2 : s.icon
+              return (
+                <Card key={s.step} className="flex items-center gap-3">
+                  <span className={`flex h-11 w-11 items-center justify-center rounded-2xl ${done ? 'bg-success/10' : 'bg-amber-100'}`}>
+                    <Icon size={20} className={done ? 'text-success' : 'text-amber-600'} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-amber-600">Step {s.step} of 3</p>
+                    <p className="text-sm font-bold text-navy-950">{s.title}</p>
+                    <p className="text-xs text-slate-muted">{s.desc}</p>
+                  </div>
+                </Card>
+              )
+            })}
+          </div>
+          <p className="mt-3 text-xs text-slate-muted">Document and guarantor verification is completed by the Kaya admin team once submitted.</p>
+        </div>
+      )}
+
+      {!active && online && !incoming && (
+        <div className="mt-8 px-5 text-center">
+          <div className="relative mx-auto flex h-16 w-16 items-center justify-center">
+            <span className="pulse-ring absolute inset-0" />
+            <span className="relative flex h-16 w-16 items-center justify-center rounded-full bg-navy-900">
+              <Radio size={24} className="text-amber-400" />
+            </span>
+          </div>
+          <p className="mt-3 text-sm font-semibold text-navy-950">Listening for nearby requests…</p>
+        </div>
+      )}
+
+      {!active && !online && (
+        <div className="mt-8 px-5 text-center text-sm text-slate-muted">You're offline. Go online to start receiving delivery requests nearby.</div>
+      )}
+
+      {incoming && !active && (
+        <div className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-md animate-slide-up rounded-t-3xl bg-white p-5 shadow-2xl safe-bottom">
+          <p className="text-center text-xs font-bold uppercase tracking-wide text-amber-600">New delivery request</p>
+          <div className="mt-3 flex items-center justify-between">
+            <div>
+              <p className="text-base font-extrabold text-navy-950">{incoming.category} delivery</p>
+              <p className="text-xs text-slate-muted">{incoming.vehicle}</p>
+            </div>
+            <p className="text-lg font-extrabold text-navy-950">{formatNaira(incoming.price)}</p>
+          </div>
+          <div className="mt-3 space-y-1.5 rounded-2xl bg-navy-900/5 p-3 text-sm">
+            <p className="flex items-start gap-1.5">
+              <MapPin size={14} className="mt-0.5 shrink-0 text-navy-900/50" />
+              <span><span className="text-slate-muted">From: </span>{incoming.pickup}</span>
+            </p>
+            <p className="flex items-start gap-1.5">
+              <MapPin size={14} className="mt-0.5 shrink-0 text-amber-600" />
+              <span><span className="text-slate-muted">To: </span>{incoming.dropoff}</span>
+            </p>
+          </div>
+          <div className="mt-4 flex gap-3">
+            <Button variant="outline" full onClick={() => declineRequest(incoming.id)} disabled={busy}>
+              Decline
+            </Button>
+            <Button full onClick={() => acceptRequest(incoming)} disabled={busy}>
+              Accept
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {active && (
+        <div className="mt-6 px-5">
+          <LiveMap
+            pickup={{ lat: active.pickupLat, lng: active.pickupLng }}
+            dropoff={{ lat: active.dropoffLat, lng: active.dropoffLng }}
+            progress={active.status === 'enroute' ? 0.33 : active.status === 'arrived' ? 0.66 : 0.9}
+            className="h-44 rounded-3xl"
+          />
+          <Card className="mt-4">
+            <div className="flex items-center gap-3">
+              <Avatar name={active.customer?.name} size={44} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold text-navy-950">{active.customer?.name || 'Customer'}</p>
+                <p className="text-xs text-slate-muted">{active.status === 'in_transit' ? active.dropoff : active.pickup}</p>
+              </div>
+              <div className="flex gap-2">
+                <a
+                  href={active.customer?.phone ? `tel:${active.customer.phone}` : undefined}
+                  className="tap flex h-10 w-10 items-center justify-center rounded-full bg-navy-900/5"
+                  aria-disabled={!active.customer?.phone}
+                >
+                  <Phone size={16} className="text-navy-900" />
+                </a>
+                <button
+                  onClick={() => active.conversationId && navigate(`/driver/messages/${active.conversationId}`)}
+                  className="tap flex h-10 w-10 items-center justify-center rounded-full bg-navy-900/5"
+                >
+                  <MessageCircle size={16} className="text-navy-900" />
+                </button>
+              </div>
+            </div>
+            <div className="my-3 h-px bg-navy-900/8" />
+            <p className="text-sm font-bold text-navy-950">{STAGE_LABEL[active.status]?.title}</p>
+            <div className="my-3 h-px bg-navy-900/8" />
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-muted">Fare</span>
+              <span className="font-semibold text-navy-950">{formatNaira(active.price)}</span>
+            </div>
+            <Button full className="mt-4" onClick={advance} disabled={busy}>
+              {busy ? 'Updating…' : STAGE_LABEL[active.status]?.cta}
+            </Button>
+          </Card>
+        </div>
+      )}
+    </div>
+  )
+}

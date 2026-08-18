@@ -1,0 +1,167 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+
+  /* Neutral / "black" scale — used for dark surfaces, text, and buttons */
+  --color-navy-950: #000000;
+  --color-navy-900: #0a0a0a;
+  --color-navy-800: #171717;
+  --color-navy-700: #262626;
+  --color-navy-600: #3d3d3d;
+  --color-navy-500: #595959;
+
+  /* Brand blue scale — Kaya's primary color, #00ABFD */
+  --color-amber-600: #0089cc;
+  --color-amber-500: #00abfd;
+  --color-amber-400: #33bdfd;
+  --color-amber-300: #7dd6fe;
+  --color-amber-100: #e3f6ff;
+
+  /* Light surfaces — brand is blue / white / black, so keep these near-white */
+  --color-cream-100: #ffffff;
+  --color-cream-200: #f4f6f8;
+
+  --color-ink: #0a0a0a;
+  --color-slate-muted: #6b7280;
+
+  --color-success: #1f9d55;
+  --color-danger: #e5484d;
+
+  --shadow-soft: 0 8px 24px -8px rgba(0, 0, 0, 0.16);
+  --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.07);
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-cream-100);
+  color: var(--color-ink);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(11, 30, 61, 0.18);
+  border-radius: 999px;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.tap {
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+.tap:active {
+  transform: scale(0.97);
+  opacity: 0.9;
+}
+
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.9); opacity: 0.6; }
+  70% { transform: scale(1.6); opacity: 0; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+.pulse-ring::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--color-amber-500);
+  animation: pulse-ring 1.8s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+}
+
+@keyframes slide-up {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.animate-slide-up {
+  animation: slide-up 0.28s ease-out both;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out both;
+}
+
+/* ---- Google Places Autocomplete dropdown ----
+   Rendered by the Maps SDK directly into document.body, outside React and outside
+   Tailwind's normal reach, so it needs plain global CSS to match the rest of the app
+   instead of looking like unstyled default browser chrome. */
+.pac-container {
+  margin-top: 8px;
+  padding: 6px;
+  border: none;
+  border-radius: 20px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.14);
+  font-family: var(--font-sans);
+  z-index: 10000; /* above every fixed nav/sheet in the app (highest in-app is z-50) */
+}
+.pac-container:empty {
+  display: none;
+}
+/* Hide Google's default "powered by Google" logo row spacing quirks and the divider line */
+.pac-container::after {
+  display: none;
+}
+.pac-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 10px;
+  min-height: 44px;
+  border-top: none;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.3;
+  color: var(--color-ink);
+  cursor: pointer;
+}
+.pac-item:hover,
+.pac-item-selected {
+  background: var(--color-amber-100);
+}
+.pac-icon {
+  display: none; /* Google's default pin glyph is low-res and off-brand; icon-free reads cleaner */
+}
+.pac-item-query {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--color-ink);
+  padding-right: 4px;
+}
+.pac-matched {
+  color: var(--color-amber-600);
+  font-weight: 700;
+}
+/* The secondary "area, city" text that follows .pac-item-query as a plain text node */
+.pac-item > span:not(.pac-item-query):not(.pac-icon) {
+  color: var(--color-slate-muted);
+  font-size: 13px;
+}
