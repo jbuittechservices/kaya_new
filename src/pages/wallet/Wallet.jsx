@@ -1,5 +1,6 @@
-import { useState } from 'react'
-import { Eye, EyeOff, ArrowDownLeft, ArrowUpRight, Wallet as WalletIcon } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { Eye, EyeOff, ArrowDownLeft, ArrowUpRight, Wallet as WalletIcon, RefreshCw } from 'lucide-react'
 import { useAppData } from '../../context/AppDataContext'
 import { Card } from '../../components/ui/Misc'
 import Button from '../../components/ui/Button'
@@ -7,15 +8,38 @@ import { formatNaira, formatDate } from '../../utils/format'
 import { QUICK_TOPUP_AMOUNTS } from '../../data/mock'
 
 export default function Wallet() {
-  const { walletBalance, transactions, topUpWallet } = useAppData()
+  const { walletBalance, transactions, topUpWallet, verifyTopUp } = useAppData()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [hidden, setHidden] = useState(false)
   const [showTopUp, setShowTopUp] = useState(false)
   const [amount, setAmount] = useState(2500)
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState(null)
+  const [checkingRef, setCheckingRef] = useState(null)
 
   const isValidAmount = Number(amount) >= 100 && Number(amount) <= 1000000
   const amountError = amount !== '' && !isValidAmount ? 'Enter an amount between ₦100 and ₦1,000,000' : null
+
+  // Paystack redirects back here with ?reference=... (or ?trxref=...) after checkout —
+  // this is what actually confirms and credits the payment. Without this, a top-up
+  // would show up in the transaction list as "pending" forever and never reach the
+  // wallet balance, even though the money was genuinely charged.
+  useEffect(() => {
+    const reference = searchParams.get('reference') || searchParams.get('trxref')
+    if (!reference) return
+
+    verifyTopUp(reference)
+      .then((result) => {
+        setNote(result.status === 'success' ? 'Payment confirmed — your wallet has been credited.' : 'We could not confirm that payment. If you were charged, use "Check status" below on the pending transaction.')
+      })
+      .catch(() => setNote('Could not verify that payment right now. Try "Check status" on the transaction below in a moment.'))
+      .finally(() => {
+        setTimeout(() => setNote(null), 6000)
+        // Clean the reference out of the URL so refreshing doesn't re-trigger verification
+        setSearchParams({}, { replace: true })
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function confirmTopUp() {
     if (!isValidAmount) return
@@ -28,6 +52,19 @@ export default function Wallet() {
       setNote(err.message)
     } finally {
       setBusy(false)
+      setTimeout(() => setNote(null), 4000)
+    }
+  }
+
+  async function checkStatus(reference) {
+    setCheckingRef(reference)
+    try {
+      const result = await verifyTopUp(reference)
+      setNote(result.status === 'success' ? 'Confirmed — your wallet has been credited.' : "Still not confirmed on Paystack's side yet. Try again shortly.")
+    } catch (err) {
+      setNote(err.message)
+    } finally {
+      setCheckingRef(null)
       setTimeout(() => setNote(null), 4000)
     }
   }
@@ -114,12 +151,26 @@ export default function Wallet() {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-navy-950">{t.label}</p>
-                <p className="text-xs text-slate-muted">{formatDate(t.createdAt)}</p>
+                <p className="text-xs text-slate-muted">
+                  {formatDate(t.createdAt)}
+                  {t.status === 'pending' && ' · Awaiting confirmation'}
+                </p>
               </div>
-              <p className={`text-sm font-bold ${t.type === 'credit' ? 'text-success' : 'text-navy-950'}`}>
-                {t.type === 'credit' ? '+' : '-'}
-                {formatNaira(t.amount)}
-              </p>
+              {t.status === 'pending' && t.reference ? (
+                <button
+                  onClick={() => checkStatus(t.reference)}
+                  disabled={checkingRef === t.reference}
+                  className="tap flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1.5 text-xs font-semibold text-amber-700"
+                >
+                  <RefreshCw size={12} className={checkingRef === t.reference ? 'animate-spin' : ''} />
+                  {checkingRef === t.reference ? 'Checking…' : 'Check status'}
+                </button>
+              ) : (
+                <p className={`text-sm font-bold ${t.type === 'credit' ? 'text-success' : 'text-navy-950'}`}>
+                  {t.type === 'credit' ? '+' : '-'}
+                  {formatNaira(t.amount)}
+                </p>
+              )}
             </div>
           ))
         )}

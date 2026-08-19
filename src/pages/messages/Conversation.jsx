@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { Phone, Send } from 'lucide-react'
 import { api } from '../../lib/api'
-import { getSocket } from '../../lib/socket'
+import { useSocket } from '../../lib/socket'
 import { useAuth } from '../../context/AuthContext'
 import { useAppData } from '../../context/AppDataContext'
 import { BackHeader } from '../../components/ui/Misc'
@@ -14,6 +14,7 @@ export default function Conversation() {
   const { id } = useParams()
   const { user } = useAuth()
   const { sendMessage } = useAppData()
+  const socket = useSocket()
   const [convo, setConvo] = useState(null)
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
@@ -48,7 +49,6 @@ export default function Conversation() {
   }, [id])
 
   useEffect(() => {
-    const socket = getSocket()
     if (!socket) return
     socket.emit('conversation:join', { conversationId: id })
 
@@ -57,7 +57,7 @@ export default function Conversation() {
     }
     socket.on('message:new', onNew)
     return () => socket.off('message:new', onNew)
-  }, [id])
+  }, [id, socket])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' })

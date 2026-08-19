@@ -1,4 +1,5 @@
-import { Outlet, Navigate } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Outlet, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useAppData } from '../../context/AppDataContext'
 import { formatNaira } from '../../utils/format'
@@ -7,7 +8,21 @@ import DesktopNav from './DesktopNav'
 
 export default function AppShell() {
   const { isAuthenticated, booting } = useAuth()
-  const { walletBalance } = useAppData()
+  const { walletBalance, reconciledOrderId } = useAppData()
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  // A page reload mid-delivery rebuilds tracking state from the server (see
+  // AppDataContext) but that alone doesn't put the person back on the tracking
+  // screen — do that once here, without re-triggering on every render or fighting
+  // the person if they deliberately navigate elsewhere afterward.
+  useEffect(() => {
+    if (reconciledOrderId && location.pathname !== '/app/booking') {
+      navigate('/app/booking')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reconciledOrderId])
+
   if (booting) return null
   if (!isAuthenticated) return <Navigate to="/signin" replace />
 

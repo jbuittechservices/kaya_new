@@ -355,6 +355,22 @@ to production noted in code comments, are:
 This app went through several rounds of a genuine audit (not just a read-through — every item
 below was reproduced against the live running server before being fixed, and re-verified after):
 
+- **Real-time reliability**: the app's socket listeners (order tracking, chat, driver dispatch)
+  were attached in a `useEffect` that assumed the socket connection already existed — but the
+  socket connects *after* an async session-restore call, so this was a near-guaranteed race, not
+  an occasional glitch. Fixed with a proper `useSocket()` hook so listeners attach the moment the
+  connection is actually ready, and re-attach on every reconnect. A polling safety net was also
+  added so a customer's tracking screen self-heals within seconds even if a live update is
+  genuinely missed during a transient network drop, instead of getting stuck indefinitely.
+- **Session continuity**: a driver's "online" status and a customer's active delivery tracking
+  both used to reset to nothing on every page refresh — online status is now a persisted
+  preference that re-asserts itself on reconnect, and active order tracking is rebuilt from the
+  server on load instead of being lost.
+- **Wallet top-ups via real Paystack**: the backend verification endpoint was correct, but nothing
+  in the frontend ever called it after checkout — top-ups would sit at "pending" forever with the
+  money charged but never credited. Fixed with automatic verification on return from checkout,
+  plus a manual "Check status" fallback on any pending transaction.
+
 - **Auth/sessions**: production boot now refuses to start with a missing or default `JWT_SECRET`;
   expired or suspended sessions now redirect cleanly instead of failing silently forever, on both
   the REST and Socket.IO side.

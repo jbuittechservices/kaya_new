@@ -7,7 +7,9 @@ import Button from '../../components/ui/Button'
 import LiveMap from '../../components/ui/LiveMap'
 import { formatNaira } from '../../utils/format'
 import { api } from '../../lib/api'
-import { getSocket } from '../../lib/socket'
+import { useSocket } from '../../lib/socket'
+
+const ONLINE_PREF_KEY = 'kaya.driver.onlinePref'
 
 const ONBOARDING_STEPS = [
   { key: 'personalInfo', step: 1, title: 'Personal information', desc: 'Fill out your personal details to get onboarded', icon: ClipboardList },
@@ -24,7 +26,11 @@ const STAGE_LABEL = {
 export default function DriverHome() {
   const { user, refreshUser } = useAuth()
   const navigate = useNavigate()
-  const [online, setOnline] = useState(false)
+  const socket = useSocket()
+  // "Online" is a real preference, not just UI state — a refresh (or a brief network
+  // drop that silently reconnects the socket) shouldn't quietly demote the driver to
+  // offline until they notice deliveries have stopped coming in.
+  const [online, setOnline] = useState(() => localStorage.getItem(ONLINE_PREF_KEY) === 'true')
   const [queue, setQueue] = useState([])
   const [active, setActive] = useState(null)
   const [earnings, setEarnings] = useState({ todayEarnings: 0, tripsToday: 0 })
@@ -37,8 +43,16 @@ export default function DriverHome() {
     api.get('/api/drivers/earnings').then(setEarnings).catch(() => {})
   }, [])
 
+  // Re-assert "online" to the server every time a connection is (re)established —
+  // covers the initial page load race (socket not ready yet when this mounts) and
+  // any later silent reconnect (network blip, server restart) without the driver
+  // having to notice and manually toggle back on.
   useEffect(() => {
-    const socket = getSocket()
+    if (!socket || !online) return
+    socket.emit('driver:online')
+  }, [socket, online])
+
+  useEffect(() => {
     if (!socket) return
 
     function onIncoming(order) {
@@ -54,13 +68,11 @@ export default function DriverHome() {
       socket.off('order:incoming', onIncoming)
       socket.off('order:taken', onTaken)
     }
-  }, [])
+  }, [socket])
 
   // Report real device location to the customer while a delivery is active
   useEffect(() => {
-    if (!active || !navigator.geolocation) return
-    const socket = getSocket()
-    if (!socket) return
+    if (!active || !navigator.geolocation || !socket) return
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
@@ -74,12 +86,12 @@ export default function DriverHome() {
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
     )
     return () => navigator.geolocation.clearWatch(watchId)
-  }, [active?.id])
+  }, [active?.id, socket])
 
   function toggleOnline() {
-    const socket = getSocket()
     const next = !online
     setOnline(next)
+    localStorage.setItem(ONLINE_PREF_KEY, String(next))
     if (socket) socket.emit(next ? 'driver:online' : 'driver:offline')
     if (!next) setQueue([])
   }
