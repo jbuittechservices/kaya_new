@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { MapPin, Phone, MessageCircle, CheckCircle2, PartyPopper, Star, Wallet, Banknote } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAppData } from '../../context/AppDataContext'
@@ -6,7 +6,7 @@ import { BackHeader, Avatar } from '../../components/ui/Misc'
 import LiveMap from '../../components/ui/LiveMap'
 import Button from '../../components/ui/Button'
 import { formatNaira } from '../../utils/format'
-import { avatarSrc } from '../../lib/api'
+import { api, avatarSrc } from '../../lib/api'
 
 const PHASE_COPY = {
   enroute: { title: 'Rider is on the way', desc: 'Heading to your pickup point' },
@@ -52,9 +52,9 @@ export default function TrackingFlow({ onDone }) {
       </LiveMap>
 
       <div className="mt-5 px-5">
-        {phase === 'searching' && <SearchingPanel />}
+        {phase === 'searching' && <SearchingPanel draft={draft} />}
         {phase === 'found' && <FoundPanel draft={draft} onAccept={acceptFoundRider} onCancel={cancelDraft} />}
-        {(phase === 'enroute' || phase === 'arrived' || phase === 'in_transit') && <LivePanel draft={draft} phase={phase} navigate={navigate} />}
+        {(phase === 'enroute' || phase === 'arrived' || phase === 'in_transit') && <LivePanel draft={draft} phase={phase} navigate={navigate} onCancel={cancelDraft} />}
         {phase === 'delivered' && <ConfirmDeliveryPanel draft={draft} onConfirm={confirmDelivery} />}
         {phase === 'completed' && <CompletedPanel draft={draft} onSkip={onDone} rateOrder={rateOrder} />}
         {phase === 'rated' && <ThankYouPanel onDone={onDone} />}
@@ -63,11 +63,34 @@ export default function TrackingFlow({ onDone }) {
   )
 }
 
-function SearchingPanel() {
+function SearchingPanel({ draft }) {
+  const [driverCount, setDriverCount] = useState(null)
+
+  useEffect(() => {
+    let alive = true
+    const check = () => {
+      api
+        .get(`/api/orders/available-drivers-count?vehicle=${draft.vehicle || ''}`)
+        .then(({ count }) => alive && setDriverCount(count))
+        .catch(() => {})
+    }
+    check()
+    const interval = setInterval(check, 8000)
+    return () => {
+      alive = false
+      clearInterval(interval)
+    }
+  }, [draft.vehicle])
+
   return (
     <div className="rounded-3xl bg-white p-6 text-center shadow-[var(--shadow-card)]">
       <h2 className="text-lg font-bold text-navy-950">Finding the nearest rider…</h2>
       <p className="mt-1.5 text-sm text-slate-muted">This usually takes less than a minute.</p>
+      {driverCount != null && (
+        <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-700">
+          {driverCount > 0 ? `${driverCount} rider${driverCount === 1 ? '' : 's'} online nearby` : 'Waiting for a rider to come online'}
+        </p>
+      )}
       <div className="mx-auto mt-6 flex w-40 justify-center gap-1.5">
         {[0, 1, 2].map((i) => (
           <span key={i} className="h-2 w-2 animate-pulse rounded-full bg-amber-500" style={{ animationDelay: `${i * 0.15}s` }} />
@@ -88,7 +111,8 @@ function FoundPanel({ draft, onAccept, onCancel }) {
           <div className="min-w-0 flex-1">
             <p className="text-base font-bold text-navy-950">{rider.name}</p>
             <p className="flex items-center gap-1 text-sm text-slate-muted">
-              <Star size={14} className="fill-[#FFB800] text-[#FFB800]" /> {rider.rating} · {rider.trips} trips
+              <Star size={14} className="fill-[#FFB800] text-[#FFB800]" />{' '}
+              {rider.trips > 0 ? `${rider.rating} · ${rider.trips} trips` : 'New rider'}
             </p>
           </div>
           <p className="text-sm font-semibold text-amber-600">{rider.eta ?? 5} min away</p>
@@ -111,10 +135,12 @@ function FoundPanel({ draft, onAccept, onCancel }) {
   )
 }
 
-function LivePanel({ draft, phase, navigate }) {
+function LivePanel({ draft, phase, navigate, onCancel }) {
   const rider = draft.rider
   const copy = PHASE_COPY[phase]
   const price = draft.order?.price
+  const [cancelling, setCancelling] = useState(false)
+
   return (
     <div className="animate-fade-in space-y-4">
       <div className="rounded-3xl bg-white p-4 shadow-[var(--shadow-card)]">
@@ -159,6 +185,24 @@ function LivePanel({ draft, phase, navigate }) {
           <span className="max-w-[60%] truncate font-semibold text-navy-950">{draft.dropoff || 'Destination'}</span>
         </div>
       </div>
+
+      {phase === 'enroute' && (
+        <button
+          onClick={async () => {
+            if (!window.confirm('Cancel this delivery? Your rider is already on the way.')) return
+            setCancelling(true)
+            try {
+              await onCancel()
+            } finally {
+              setCancelling(false)
+            }
+          }}
+          disabled={cancelling}
+          className="tap w-full rounded-2xl border border-danger/30 py-3 text-center text-sm font-semibold text-danger"
+        >
+          {cancelling ? 'Cancelling…' : 'Cancel delivery'}
+        </button>
+      )}
     </div>
   )
 }

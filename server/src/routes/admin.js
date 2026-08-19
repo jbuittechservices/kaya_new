@@ -5,6 +5,7 @@ import { db, DATA_DIR } from '../db.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { serializeUser, serializeOrder, serializeTransaction } from '../utils/serialize.js'
 import * as bus from '../sockets/bus.js'
+import { sendPushToUser } from '../utils/push.js'
 
 const router = Router()
 router.use(requireAuth, requireRole('admin'))
@@ -126,6 +127,12 @@ router.patch('/users/:id/verify-driver', (req, res) => {
   if (!user || user.role !== 'driver') return res.status(404).json({ error: 'Driver not found' })
   const onboarding = { personalInfo: true, documents: true, guarantor: true }
   db.prepare('UPDATE users SET onboarding_json = ? WHERE id = ?').run(JSON.stringify(onboarding), user.id)
+  sendPushToUser(user.id, {
+    title: "You're verified!",
+    body: "Your Kaya rider account has been approved — you can now go online and start earning.",
+    url: '/driver',
+    tag: 'driver-verified',
+  }).catch((err) => console.error('[push] verification notify failed:', err.message))
   res.json({ ok: true })
 })
 

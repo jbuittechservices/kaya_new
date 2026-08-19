@@ -13,7 +13,7 @@ const QUICK_REPLIES = ['Hello', 'Where are you?', "I'm at the gate", 'Thank you!
 export default function Conversation() {
   const { id } = useParams()
   const { user } = useAuth()
-  const { sendMessage } = useAppData()
+  const { sendMessage, refreshConversations } = useAppData()
   const socket = useSocket()
   const [convo, setConvo] = useState(null)
   const [messages, setMessages] = useState([])
@@ -43,9 +43,16 @@ export default function Conversation() {
       .get(`/api/messages/${id}/messages`)
       .then(({ messages }) => alive && setMessages(messages))
       .finally(() => alive && setLoading(false))
+    // Opening a conversation reads everything in it — clear the unread badge, both
+    // locally (below, immediate) and on the server (so it stays cleared elsewhere).
+    api
+      .post(`/api/messages/${id}/read`)
+      .then(() => refreshConversations().catch(() => {}))
+      .catch(() => {})
     return () => {
       alive = false
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   useEffect(() => {
@@ -53,10 +60,13 @@ export default function Conversation() {
     socket.emit('conversation:join', { conversationId: id })
 
     function onNew({ conversationId, message }) {
-      if (conversationId === id) setMessages((prev) => [...prev, message])
+      if (conversationId !== id) return
+      setMessages((prev) => [...prev, message])
+      api.post(`/api/messages/${id}/read`).then(() => refreshConversations().catch(() => {})).catch(() => {})
     }
     socket.on('message:new', onNew)
     return () => socket.off('message:new', onNew)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, socket])
 
   useEffect(() => {

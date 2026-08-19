@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import { db, uid, DATA_DIR } from '../db.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { serializeUser } from '../utils/serialize.js'
+import { sendPushToUser } from '../utils/push.js'
 
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads', 'drivers')
 fs.mkdirSync(UPLOADS_DIR, { recursive: true })
@@ -157,6 +158,13 @@ router.post('/withdraw', (req, res) => {
   db.prepare(
     'INSERT INTO transactions (id, user_id, type, label, amount, status) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(id, req.user.id, 'debit', `Withdrawal to ${req.user.bank_name || 'bank'} •••• ${req.user.bank_account_number.slice(-4)}`, amount, 'pending')
+
+  sendPushToUser(req.user.id, {
+    title: 'Withdrawal requested',
+    body: `₦${amount.toLocaleString()} is being processed to your bank account.`,
+    url: '/driver/wallet',
+    tag: `withdraw-${id}`,
+  }).catch((err) => console.error('[push] withdraw notify failed:', err.message))
 
   res.json({ ok: true, walletBalance: req.user.wallet_balance - amount })
 })

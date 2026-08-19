@@ -7,6 +7,7 @@ import { Card, StatusBadge, Avatar } from '../components/ui/Misc'
 import Button from '../components/ui/Button'
 import PlacesAutocompleteInput from '../components/ui/PlacesAutocomplete'
 import { formatNaira, formatDate } from '../utils/format'
+import { avatarSrc } from '../lib/api'
 import { PACKAGE_CATEGORIES } from '../data/mock'
 import { CATEGORY_ICONS, LOCATION_ICONS, MapPin } from '../lib/icons'
 
@@ -52,7 +53,7 @@ export default function Home() {
           <p className="text-sm text-slate-muted">Good to see you,</p>
           <h1 className="text-xl font-extrabold text-navy-950">{firstName}</h1>
         </div>
-        <Avatar name={user?.name} />
+        <Avatar name={user?.name} src={avatarSrc(user?.avatarUrl)} />
       </div>
 
       {/* Booking card */}

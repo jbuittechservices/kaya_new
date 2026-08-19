@@ -250,8 +250,8 @@ export function AppDataProvider({ children }) {
 
   async function cancelDraft() {
     const d = draftRef.current
-    if (d?.orderId && ['searching', 'found'].includes(d.phase)) {
-      api.post(`/api/orders/${d.orderId}/cancel`).catch(() => {})
+    if (d?.orderId && ['searching', 'found', 'enroute'].includes(d.phase)) {
+      await api.post(`/api/orders/${d.orderId}/cancel`).catch(() => {})
     }
     setDraft(null)
     refreshOrders().catch(() => {})

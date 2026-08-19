@@ -73,7 +73,8 @@ export default function AdminDrivers() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-bold text-navy-950">{u.name}</p>
                     <p className="flex items-center gap-1 truncate text-xs text-slate-muted">
-                      <Star size={12} className="fill-[#FFB800] text-[#FFB800]" /> {u.riderRating} · {u.riderTrips} trips · {u.phone}
+                      <Star size={12} className="fill-[#FFB800] text-[#FFB800]" />{' '}
+                      {u.riderTrips > 0 ? `${u.riderRating} · ${u.riderTrips} trips` : 'New rider'} · {u.phone}
                     </p>
                   </div>
                   <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${verified ? 'bg-success/10 text-success' : 'bg-amber-100 text-amber-700'}`}>

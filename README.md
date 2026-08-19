@@ -358,6 +358,27 @@ to production noted in code comments, are:
 This app went through several rounds of a genuine audit (not just a read-through — every item
 below was reproduced against the live running server before being fixed, and re-verified after):
 
+- **Dynamic, distance/time-based pricing**: fares used to be a single flat number per vehicle
+  type. Now calculated from real distance (via the pickup/dropoff coordinates already captured
+  at booking, no extra API cost) and estimated time, with base fare + per-km + per-minute rates
+  admin-configurable per vehicle type — useful as fuel prices fluctuate. Verified live that the
+  price shown to a customer before booking exactly matches what they're actually charged.
+- **Phone numbers now default to +234**: every phone field across signup, sign-in, and password
+  reset has a fixed, non-editable +234 prefix, so a person typing "0803..." can't accidentally
+  submit a number Twilio would reject or misinterpret. Hardened server-side too, so even a
+  request that bypasses the UI still gets normalized correctly.
+- **Missing profile pictures**: both home screens (and the admin sidebar) were rendering the
+  Avatar component with no `src` at all, so uploaded photos never showed there even though they
+  worked everywhere else in the app.
+- **"Destination not set" with no way to fix it**: tapping a package category on Home skipped
+  straight to the details screen using whatever was in Home's own destination field — if that
+  was empty, the details screen showed a read-only "Not set" label with no way to correct it.
+  Pickup and destination are now genuinely editable directly on the details screen.
+- **Hardcoded fake ratings**: every new driver started at a fabricated 4.8★ and every new
+  customer at 5.0★, shown as if it were earned even with zero completed trips. Fixed at the
+  schema level, with a one-time cleanup for any already-deployed account with zero real history
+  behind its fake number — "New rider" now shows instead until a real rating exists.
+
 - **Delivery confirmation & payment**: a driver marking a delivery "delivered" used to settle
   payment immediately and unlock rating — with zero input from the customer. Restructured so
   "delivered" (driver's declaration) and "completed" (customer's confirmation) are distinct

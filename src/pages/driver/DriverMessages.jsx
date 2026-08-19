@@ -27,11 +27,16 @@ export default function DriverMessages() {
               <Avatar name={c.participant?.name} size={48} src={avatarSrc(c.participant?.avatarUrl)} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between">
-                  <p className="truncate text-sm font-bold text-navy-950">{c.participant?.name || 'Customer'}</p>
+                  <p className={`truncate text-sm text-navy-950 ${c.unreadCount > 0 ? 'font-extrabold' : 'font-bold'}`}>{c.participant?.name || 'Customer'}</p>
                   <p className="shrink-0 text-xs text-slate-muted">{timeAgo(c.lastMessageAt)}</p>
                 </div>
-                <p className="truncate text-sm text-slate-muted">{c.lastMessage || 'Say hello to get started'}</p>
+                <p className={`truncate text-sm ${c.unreadCount > 0 ? 'font-semibold text-navy-900' : 'text-slate-muted'}`}>{c.lastMessage || 'Say hello to get started'}</p>
               </div>
+              {c.unreadCount > 0 && (
+                <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-danger px-1.5 text-[11px] font-bold text-white">
+                  {c.unreadCount > 9 ? '9+' : c.unreadCount}
+                </span>
+              )}
             </button>
           ))}
         </div>

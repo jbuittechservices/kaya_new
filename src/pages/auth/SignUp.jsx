@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { CheckCircle2 } from 'lucide-react'
 import AuthShell from '../../components/layout/AuthShell'
 import DarkInput from '../../components/ui/DarkInput'
+import PhoneInput from '../../components/ui/PhoneInput'
 import Button from '../../components/ui/Button'
 import { useAuth } from '../../context/AuthContext'
 
@@ -117,7 +118,7 @@ export default function SignUp({ driver = false }) {
         onBack={goBack}
       >
         <form onSubmit={submitPhone} className="flex h-full flex-col gap-4">
-          <DarkInput label="Phone number" type="tel" placeholder="080X XXX XXXX" value={phone} onChange={(e) => setPhone(e.target.value)} required autoFocus />
+          <PhoneInput label="Phone number" value={phone} onChange={setPhone} dark required autoFocus />
           {error && <p className="text-sm font-medium text-amber-300">{error}</p>}
           <div className="mt-auto pt-6">
             <Button type="submit" full size="lg" disabled={loading}>

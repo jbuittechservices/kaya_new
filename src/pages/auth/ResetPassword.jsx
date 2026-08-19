@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { CheckCircle2 } from 'lucide-react'
 import AuthShell from '../../components/layout/AuthShell'
 import DarkInput from '../../components/ui/DarkInput'
+import PhoneInput from '../../components/ui/PhoneInput'
 import Button from '../../components/ui/Button'
 import { useAuth } from '../../context/AuthContext'
 
@@ -62,7 +63,7 @@ export default function ResetPassword() {
     return (
       <AuthShell title="Reset your password" subtitle="Enter the phone number linked to your account." onBack={() => navigate('/signin')}>
         <form onSubmit={submitPhone} className="flex h-full flex-col gap-4">
-          <DarkInput label="Phone number" type="tel" placeholder="080X XXX XXXX" value={phone} onChange={(e) => setPhone(e.target.value)} required autoFocus />
+          <PhoneInput label="Phone number" value={phone} onChange={setPhone} dark required autoFocus />
           {error && <p className="text-sm font-medium text-amber-300">{error}</p>}
           <div className="mt-auto pt-6">
             <Button type="submit" full size="lg" disabled={loading}>

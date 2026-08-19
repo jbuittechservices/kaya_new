@@ -47,7 +47,12 @@ function handleAvatarUpload(req, res, next) {
 }
 
 function normalizePhone(phone = '') {
-  return phone.replace(/[^\d+]/g, '')
+  let cleaned = phone.replace(/[^\d+]/g, '')
+  if (cleaned.startsWith('+')) return cleaned
+  if (cleaned.startsWith('234')) return `+${cleaned}`
+  if (cleaned.startsWith('0')) return `+234${cleaned.slice(1)}`
+  if (cleaned.length > 0) return `+234${cleaned}` // bare national number with no leading 0
+  return cleaned
 }
 
 // ---- Sign up ----

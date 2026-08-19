@@ -12,7 +12,7 @@ const DEFAULT_LINKS = [
   { to: '/app/account', label: 'Account' },
 ]
 
-export default function DesktopNav({ links = DEFAULT_LINKS, footer, badge }) {
+export default function DesktopNav({ links = DEFAULT_LINKS, footer, badge, unreadCount = 0 }) {
   const { user, logout } = useAuth()
 
   return (
@@ -29,12 +29,17 @@ export default function DesktopNav({ links = DEFAULT_LINKS, footer, badge }) {
             to={link.to}
             end={link.end}
             className={({ isActive }) =>
-              `tap rounded-2xl px-4 py-3 text-[15px] font-semibold transition ${
+              `tap flex items-center justify-between rounded-2xl px-4 py-3 text-[15px] font-semibold transition ${
                 isActive ? 'bg-navy-900 text-white' : 'text-navy-900/60 hover:bg-navy-900/5'
               }`
             }
           >
             {link.label}
+            {link.label === 'Messages' && unreadCount > 0 && (
+              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1.5 text-[11px] font-bold text-white">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>

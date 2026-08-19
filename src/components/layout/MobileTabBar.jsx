@@ -42,7 +42,7 @@ const DEFAULT_TABS = [
   { to: '/app/account', label: 'Account', icon: 'account' },
 ]
 
-export default function MobileTabBar({ tabs = DEFAULT_TABS }) {
+export default function MobileTabBar({ tabs = DEFAULT_TABS, unreadCount = 0 }) {
   return (
     <nav className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t border-navy-900/8 bg-white/95 backdrop-blur md:hidden">
       <div className="mx-auto flex max-w-md items-stretch justify-between px-2">
@@ -55,7 +55,14 @@ export default function MobileTabBar({ tabs = DEFAULT_TABS }) {
           >
             {({ isActive }) => (
               <>
-                {ICONS[tab.icon](isActive)}
+                <span className="relative">
+                  {ICONS[tab.icon](isActive)}
+                  {tab.icon === 'messages' && unreadCount > 0 && (
+                    <span className="absolute -right-1.5 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[9px] font-bold text-white">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
+                </span>
                 <span className={`text-[11px] font-semibold ${isActive ? 'text-amber-600' : 'text-navy-900/45'}`}>
                   {tab.label}
                 </span>

@@ -8,9 +8,12 @@ import DesktopNav from './DesktopNav'
 
 export default function AppShell() {
   const { isAuthenticated, booting } = useAuth()
-  const { walletBalance, reconciledOrderId } = useAppData()
+  const { walletBalance, reconciledOrderId, conversations } = useAppData()
   const navigate = useNavigate()
   const location = useLocation()
+
+  const inBookingFlow = location.pathname.startsWith('/app/booking')
+  const unreadCount = conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0)
 
   // A page reload mid-delivery rebuilds tracking state from the server (see
   // AppDataContext) but that alone doesn't put the person back on the tracking
@@ -28,13 +31,16 @@ export default function AppShell() {
 
   return (
     <div className="flex min-h-screen bg-cream-100 md:bg-white">
-      <DesktopNav footer={`${formatNaira(walletBalance)} balance`} />
-      <div className="mx-auto flex w-full max-w-md flex-1 flex-col bg-cream-100 pb-24 md:max-w-none md:pb-0">
+      <DesktopNav footer={`${formatNaira(walletBalance)} balance`} unreadCount={unreadCount} />
+      <div className={`mx-auto flex w-full max-w-md flex-1 flex-col bg-cream-100 md:max-w-none md:pb-0 ${inBookingFlow ? '' : 'pb-24'}`}>
         <div className="mx-auto w-full max-w-md flex-1 md:max-w-2xl md:px-8 md:py-8">
           <Outlet />
         </div>
       </div>
-      <MobileTabBar />
+      {/* The booking/tracking flow uses its own fixed bottom action bar (Confirm
+          delivery, Confirm I've received it, etc.) — showing the tab bar underneath
+          it at the same time was covering that button entirely on mobile. */}
+      {!inBookingFlow && <MobileTabBar unreadCount={unreadCount} />}
     </div>
   )
 }

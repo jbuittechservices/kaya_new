@@ -31,7 +31,8 @@ export default function DriverAccount() {
         <div>
           <h1 className="text-lg font-extrabold text-navy-950">{user?.name}</h1>
           <p className="flex items-center gap-1 text-sm text-slate-muted">
-            <Star size={13} className="fill-[#FFB800] text-[#FFB800]" /> {user?.riderRating} · {user?.riderTrips} trips
+            <Star size={13} className="fill-[#FFB800] text-[#FFB800]" />{' '}
+            {user?.riderTrips > 0 ? `${user.riderRating} · ${user.riderTrips} trips` : 'New rider · No trips yet'}
           </p>
         </div>
       </div>

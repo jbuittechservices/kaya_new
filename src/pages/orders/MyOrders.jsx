@@ -1,28 +1,43 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Search, Package } from 'lucide-react'
-import { useAppData } from '../../context/AppDataContext'
+import { api } from '../../lib/api'
 import { Card, StatusBadge, EmptyState } from '../../components/ui/Misc'
+import LoadMoreButton from '../../components/ui/LoadMoreButton'
 import { formatNaira, formatDate } from '../../utils/format'
 
-const FILTERS = ['All', 'Delivered', 'Cancelled']
+const FILTERS = [
+  { label: 'All', status: 'all' },
+  { label: 'Delivered', status: 'completed' },
+  { label: 'Cancelled', status: 'cancelled' },
+]
+const PAGE_SIZE = 15
 
 export default function MyOrders() {
-  const { orders } = useAppData()
-  const [filter, setFilter] = useState('All')
+  const [orders, setOrders] = useState([])
+  const [total, setTotal] = useState(0)
+  const [filter, setFilter] = useState('all')
   const [query, setQuery] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const navigate = useNavigate()
 
-  const filtered = useMemo(() => {
-    return orders.filter((o) => {
-      const matchesFilter =
-        filter === 'All' ? true : filter === 'Delivered' ? o.status === 'delivered' : o.status === 'cancelled'
-      const matchesQuery = query
-        ? o.id.toLowerCase().includes(query.toLowerCase()) || o.dropoff.toLowerCase().includes(query.toLowerCase())
-        : true
-      return matchesFilter && matchesQuery
-    })
-  }, [orders, filter, query])
+  async function load(page = 1, append = false) {
+    if (append) setLoadingMore(true)
+    else setLoading(true)
+    const qs = new URLSearchParams({ status: filter, search: query, page, pageSize: PAGE_SIZE }).toString()
+    const { orders: rows, total: newTotal } = await api.get(`/api/orders?${qs}`)
+    setOrders((prev) => (append ? [...prev, ...rows] : rows))
+    setTotal(newTotal)
+    setLoading(false)
+    setLoadingMore(false)
+  }
+
+  useEffect(() => {
+    const t = setTimeout(() => load(1, false), 250)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, query])
 
   return (
     <div className="px-5 pt-6 md:px-0">
@@ -42,22 +57,24 @@ export default function MyOrders() {
       <div className="mt-4 flex gap-2">
         {FILTERS.map((f) => (
           <button
-            key={f}
-            onClick={() => setFilter(f)}
+            key={f.status}
+            onClick={() => setFilter(f.status)}
             className={`tap rounded-full px-4 py-2 text-sm font-semibold ${
-              filter === f ? 'bg-navy-900 text-white' : 'bg-white text-navy-900/60 shadow-[var(--shadow-card)]'
+              filter === f.status ? 'bg-navy-900 text-white' : 'bg-white text-navy-900/60 shadow-[var(--shadow-card)]'
             }`}
           >
-            {f}
+            {f.label}
           </button>
         ))}
       </div>
 
       <div className="mt-5 space-y-3 pb-6">
-        {filtered.length === 0 ? (
+        {loading ? (
+          <p className="text-sm text-slate-muted">Loading…</p>
+        ) : orders.length === 0 ? (
           <EmptyState icon={Package} title="No orders found" desc="Try a different filter or search term." />
         ) : (
-          filtered.map((o) => (
+          orders.map((o) => (
             <Card key={o.id} onClick={() => navigate(`/app/orders/${o.id}`)} className="tap cursor-pointer">
               <div className="flex items-start gap-3">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-100">
@@ -74,6 +91,9 @@ export default function MyOrders() {
               </div>
             </Card>
           ))
+        )}
+        {!loading && orders.length > 0 && (
+          <LoadMoreButton shown={orders.length} total={total} loading={loadingMore} onClick={() => load(Math.floor(orders.length / PAGE_SIZE) + 1, true)} />
         )}
       </div>
     </div>

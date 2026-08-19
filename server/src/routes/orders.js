@@ -5,7 +5,7 @@ import { serializeOrder } from '../utils/serialize.js'
 import * as bus from '../sockets/bus.js'
 import { sendPushToUser, sendPushToActiveDrivers } from '../utils/push.js'
 import { isDriverVerified } from '../utils/driverVerification.js'
-import { priceFor } from '../utils/pricing.js'
+import { priceFor, estimateFor } from '../utils/pricing.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -13,13 +13,48 @@ router.use(requireAuth)
 const PLATFORM_FEE_PCT = 0.15
 const STATUS_FLOW = ['enroute', 'arrived', 'in_transit', 'delivered']
 
+// Lets the "Finding a rider" screen show something more reassuring than a blank
+// spinner — a rough count of riders currently online for this vehicle type. Not a
+// precise geofenced "nearby" count (this app doesn't track live driver location
+// outside an active delivery), just online availability.
+router.get('/available-drivers-count', (req, res) => {
+  const vehicle = req.query.vehicle
+  const onlineIds = bus.onlineDriverIds()
+  if (onlineIds.length === 0) return res.json({ count: 0 })
+
+  const placeholders = onlineIds.map(() => '?').join(',')
+  const params = [...onlineIds]
+  let query = `SELECT COUNT(*) n FROM users WHERE id IN (${placeholders}) AND status = 'active'`
+  if (vehicle) {
+    query += ' AND (vehicle_type = ? OR vehicle_type IS NULL)'
+    params.push(vehicle)
+  }
+  const count = db.prepare(query).get(...params).n
+  res.json({ count })
+})
+
+// Live fare estimate shown before booking — uses the exact same pricing math the
+// server will use to actually charge at order-creation time, so what's previewed
+// always matches what gets billed.
+router.get('/estimate', (req, res) => {
+  const { vehicle, pickupLat, pickupLng, dropoffLat, dropoffLng } = req.query
+  const estimate = estimateFor(
+    vehicle,
+    pickupLat != null ? Number(pickupLat) : undefined,
+    pickupLng != null ? Number(pickupLng) : undefined,
+    dropoffLat != null ? Number(dropoffLat) : undefined,
+    dropoffLng != null ? Number(dropoffLng) : undefined
+  )
+  res.json(estimate)
+})
+
 // Create a delivery request
 router.post('/', (req, res) => {
   const { pickup, dropoff, category, vehicle, paymentMethod, note, senderPhone, recipientPhone, pickupLat, pickupLng, dropoffLat, dropoffLng } = req.body
   if (!pickup || !dropoff) return res.status(400).json({ error: 'Pickup and dropoff are required' })
 
   const id = uid('ord')
-  const price = priceFor(vehicle)
+  const price = priceFor(vehicle, pickupLat, pickupLng, dropoffLat, dropoffLng)
 
   if ((paymentMethod === 'online' || paymentMethod === 'wallet') && req.user.wallet_balance < price) {
     return res.status(400).json({ error: 'Your wallet balance is too low for this fare. Top up or choose cash instead.' })
@@ -74,16 +109,29 @@ router.get('/', (req, res) => {
     return res.json({ orders: rows.map(serializeOrder) })
   }
 
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1)
+  const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize, 10) || 20))
+  const offset = (page - 1) * pageSize
+
   const column = req.user.role === 'driver' ? 'rider_id' : 'customer_id'
-  let rows = db.prepare(`SELECT * FROM orders WHERE ${column} = ? ORDER BY created_at DESC`).all(req.user.id)
+  const conditions = [`${column} = ?`]
+  const params = [req.user.id]
 
-  if (status && status !== 'all') rows = rows.filter((o) => o.status === status)
-  if (search) {
-    const q = search.toLowerCase()
-    rows = rows.filter((o) => o.id.toLowerCase().includes(q) || o.dropoff.toLowerCase().includes(q) || o.pickup.toLowerCase().includes(q))
+  if (status && status !== 'all') {
+    conditions.push('status = ?')
+    params.push(status)
   }
+  if (search) {
+    const like = `%${search.toLowerCase()}%`
+    conditions.push('(LOWER(id) LIKE ? OR LOWER(dropoff) LIKE ? OR LOWER(pickup) LIKE ?)')
+    params.push(like, like, like)
+  }
+  const where = `WHERE ${conditions.join(' AND ')}`
 
-  res.json({ orders: rows.map(serializeOrder) })
+  const total = db.prepare(`SELECT COUNT(*) n FROM orders ${where}`).get(...params).n
+  const rows = db.prepare(`SELECT * FROM orders ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params, pageSize, offset)
+
+  res.json({ orders: rows.map(serializeOrder), total, page, pageSize })
 })
 
 router.get('/:id', (req, res) => {
@@ -257,6 +305,18 @@ router.post('/:id/cancel', (req, res) => {
   const updated = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id)
   bus.emitToUser(order.customer_id, 'order:update', { order: serializeOrder(updated) })
   if (order.rider_id) bus.emitToUser(order.rider_id, 'order:update', { order: serializeOrder(updated) })
+
+  // Only the OTHER party needs a push — whoever cancelled it already knows.
+  const otherPartyId = req.user.id === order.customer_id ? order.rider_id : order.customer_id
+  if (otherPartyId) {
+    sendPushToUser(otherPartyId, {
+      title: 'Delivery cancelled',
+      body: `Order ${order.id} was cancelled by the ${req.user.id === order.customer_id ? 'customer' : 'rider'}.`,
+      url: req.user.id === order.customer_id ? '/driver' : '/app/orders',
+      tag: `order-${order.id}`,
+    }).catch((err) => console.error('[push] cancel notify failed:', err.message))
+  }
+
   res.json({ order: serializeOrder(updated) })
 })
 
@@ -279,7 +339,8 @@ router.post('/:id/rate', (req, res) => {
   if (order.rider_id) {
     const rider = db.prepare('SELECT rider_rating, rider_trips FROM users WHERE id = ?').get(order.rider_id)
     const trips = Math.max(rider.rider_trips, 1)
-    const newAvg = (rider.rider_rating * (trips - 1) + rating) / trips
+    const priorAvg = rider.rider_rating ?? rating // no prior rating — this one simply becomes the average
+    const newAvg = (priorAvg * (trips - 1) + rating) / trips
     db.prepare('UPDATE users SET rider_rating = ? WHERE id = ?').run(Math.round(newAvg * 10) / 10, order.rider_id)
   }
 
@@ -305,7 +366,7 @@ router.post('/:id/rate-customer', requireRole('driver'), (req, res) => {
 
   const customer = db.prepare('SELECT customer_rating, customer_rating_count FROM users WHERE id = ?').get(order.customer_id)
   const count = (customer?.customer_rating_count || 0) + 1
-  const currentAvg = customer?.customer_rating ?? 5.0
+  const currentAvg = customer?.customer_rating ?? rating // no prior rating — this one simply becomes the average
   const newAvg = (currentAvg * (count - 1) + rating) / count
   db.prepare('UPDATE users SET customer_rating = ?, customer_rating_count = ? WHERE id = ?').run(Math.round(newAvg * 10) / 10, count, order.customer_id)
 

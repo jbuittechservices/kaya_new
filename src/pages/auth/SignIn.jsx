@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import AuthShell from '../../components/layout/AuthShell'
 import DarkInput from '../../components/ui/DarkInput'
+import PhoneInput from '../../components/ui/PhoneInput'
 import Button from '../../components/ui/Button'
 import SessionExpiredNotice from '../../components/ui/SessionExpiredNotice'
 import { useAuth } from '../../context/AuthContext'
@@ -32,7 +33,7 @@ export default function SignIn() {
     <AuthShell title="Welcome back" subtitle="Log in to request a delivery or check on one already on the way." onBack={() => navigate('/')}>
       <form onSubmit={handleSubmit} className="flex h-full flex-col gap-4">
         <SessionExpiredNotice dark />
-        <DarkInput label="Phone number" type="tel" placeholder="080X XXX XXXX" value={phone} onChange={(e) => setPhone(e.target.value)} required />
+        <PhoneInput label="Phone number" value={phone} onChange={setPhone} dark required />
         <DarkInput label="Password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required />
         {error && <p className="text-sm font-medium text-amber-300">{error}</p>}
         <div className="text-right">

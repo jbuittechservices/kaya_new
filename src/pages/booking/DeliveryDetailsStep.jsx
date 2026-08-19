@@ -1,22 +1,51 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { Plus, Minus, Banknote, CreditCard } from 'lucide-react'
 import { useAppData } from '../../context/AppDataContext'
 import { BackHeader } from '../../components/ui/Misc'
 import LiveMap from '../../components/ui/LiveMap'
 import Button from '../../components/ui/Button'
 import Input from '../../components/ui/Input'
+import PlacesAutocompleteInput from '../../components/ui/PlacesAutocomplete'
 import { PACKAGE_CATEGORIES, VEHICLE_OPTIONS } from '../../data/mock'
 import { CATEGORY_ICONS, VEHICLE_ICONS } from '../../lib/icons'
 import { formatNaira } from '../../utils/format'
+import { api } from '../../lib/api'
 
 export default function DeliveryDetailsStep() {
   const { draft, updateDraft, requestRider, cancelDraft } = useAppData()
   const [showOrderDetails, setShowOrderDetails] = useState(false)
+  const [estimates, setEstimates] = useState({}) // { bike: {price, distanceKm, minutes}, car: {...}, van: {...} }
 
   const vehicle = useMemo(() => VEHICLE_OPTIONS.find((v) => v.id === draft.vehicle) || VEHICLE_OPTIONS[0], [draft.vehicle])
+  const currentEstimate = estimates[draft.vehicle]
+
+  // Live fare estimate — same formula the server uses to actually charge at booking
+  // time, so what's shown here always matches what gets billed. Refetches whenever
+  // pickup/dropoff coordinates change (selecting a different address, choosing a
+  // different vehicle type doesn't need a refetch since all three are loaded together).
+  useEffect(() => {
+    let cancelled = false
+    Promise.all(
+      VEHICLE_OPTIONS.map(async (v) => {
+        const qs = new URLSearchParams({
+          vehicle: v.id,
+          ...(draft.pickupLat != null && { pickupLat: draft.pickupLat, pickupLng: draft.pickupLng }),
+          ...(draft.dropoffLat != null && { dropoffLat: draft.dropoffLat, dropoffLng: draft.dropoffLng }),
+        }).toString()
+        const estimate = await api.get(`/api/orders/estimate?${qs}`).catch(() => null)
+        return [v.id, estimate]
+      })
+    ).then((pairs) => {
+      if (cancelled) return
+      setEstimates(Object.fromEntries(pairs.filter(([, e]) => e)))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [draft.pickupLat, draft.pickupLng, draft.dropoffLat, draft.dropoffLng])
 
   return (
-    <div className="min-h-screen bg-cream-100 pb-24 md:pb-8">
+    <div className="min-h-screen bg-cream-100 pb-28">
       <BackHeader title="Delivery details" onBack={cancelDraft} />
 
       <LiveMap
@@ -27,9 +56,33 @@ export default function DeliveryDetailsStep() {
 
       <div className="mt-5 space-y-4 px-5">
         <div className="rounded-3xl bg-white p-4 shadow-[var(--shadow-card)]">
-          <Row label="Pickup" value={draft.pickup || 'Current location'} dot="amber" />
+          <div className="flex items-center gap-3">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-slate-muted">Pickup</p>
+              <PlacesAutocompleteInput
+                value={draft.pickup || ''}
+                onChange={(val) => updateDraft({ pickup: val })}
+                onSelect={({ address, lat, lng }) => updateDraft({ pickup: address, pickupLat: lat, pickupLng: lng })}
+                placeholder="Current location"
+                className="w-full bg-transparent text-sm font-semibold text-navy-950 outline-none placeholder:text-navy-900/35"
+              />
+            </div>
+          </div>
           <div className="my-3 h-px bg-navy-900/8" />
-          <Row label="Destination" value={draft.dropoff || 'Not set'} dot="navy" />
+          <div className="flex items-center gap-3">
+            <span className="h-2 w-2 shrink-0 rounded-full bg-navy-900" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-slate-muted">Destination</p>
+              <PlacesAutocompleteInput
+                value={draft.dropoff || ''}
+                onChange={(val) => updateDraft({ dropoff: val })}
+                onSelect={({ address, lat, lng }) => updateDraft({ dropoff: address, dropoffLat: lat, dropoffLng: lng })}
+                placeholder="Where is this going?"
+                className="w-full bg-transparent text-sm font-semibold text-navy-950 outline-none placeholder:text-navy-900/35"
+              />
+            </div>
+          </div>
         </div>
 
         {/* Category */}
@@ -75,7 +128,7 @@ export default function DeliveryDetailsStep() {
                     <p className="text-sm font-bold text-navy-950">{v.label} · {v.eta}</p>
                     <p className="text-xs text-slate-muted">{v.desc} · {v.capacity}</p>
                   </div>
-                  <p className="text-sm font-extrabold text-navy-950">{formatNaira(v.price)}</p>
+                  <p className="text-sm font-extrabold text-navy-950">{formatNaira(estimates[v.id]?.price ?? v.price)}</p>
                 </button>
               )
             })}
@@ -125,8 +178,10 @@ export default function DeliveryDetailsStep() {
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-base font-bold text-amber-600">₦</span>
             <div>
-              <p className="text-sm font-extrabold text-navy-950">{formatNaira(vehicle.price)}</p>
-              <p className="text-xs text-navy-900/60">Standard fare for this vehicle type</p>
+              <p className="text-sm font-extrabold text-navy-950">{formatNaira(currentEstimate?.price ?? vehicle.price)}</p>
+              <p className="text-xs text-navy-900/60">
+                {currentEstimate ? `~${currentEstimate.distanceKm}km · ~${currentEstimate.minutes} min` : 'Estimated fare — set pickup and destination for an exact price'}
+              </p>
             </div>
           </div>
         </div>
@@ -152,22 +207,10 @@ export default function DeliveryDetailsStep() {
         {draft.error && <p className="text-center text-sm font-medium text-danger">{draft.error}</p>}
       </div>
 
-      <div className="mt-6 px-5 pb-24 md:mt-6 md:px-0 md:pb-0">
+      <div className="fixed inset-x-0 bottom-0 mx-auto max-w-md border-t border-navy-900/8 bg-cream-100/95 px-5 py-4 backdrop-blur safe-bottom md:static md:mt-6 md:border-0 md:bg-transparent md:px-0">
         <Button full size="lg" disabled={!draft.dropoff} onClick={requestRider}>
           Confirm delivery
         </Button>
-      </div>
-    </div>
-  )
-}
-
-function Row({ label, value, dot }) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className={`h-2 w-2 rounded-full ${dot === 'amber' ? 'bg-amber-500' : 'bg-navy-900'}`} />
-      <div className="min-w-0 flex-1">
-        <p className="text-xs text-slate-muted">{label}</p>
-        <p className="truncate text-sm font-semibold text-navy-950">{value}</p>
       </div>
     </div>
   )

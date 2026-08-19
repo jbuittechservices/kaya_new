@@ -148,6 +148,33 @@ export default function DriverHome() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Safety net: poll while there's an active delivery, in case a live socket update
+  // was genuinely missed during a brief disconnect. Mirrors the same pattern used on
+  // the customer side — cheap insurance against a driver getting stuck indefinitely
+  // waiting for an event that already happened.
+  useEffect(() => {
+    if (!active?.id) return
+    const interval = setInterval(async () => {
+      try {
+        const { order, customer } = await api.get(`/api/orders/${active.id}`)
+        if (order.status === active.status) return // already in sync
+        if (order.status === 'completed') {
+          setRateCustomerOrder({ ...order, customer: active.customer })
+          api.get('/api/drivers/earnings').then(setEarnings).catch(() => {})
+          refreshUser()
+          setActive(null)
+        } else if (order.status === 'cancelled') {
+          setActive(null)
+        } else {
+          setActive((a) => (a ? { ...a, ...order, customer: customer || a.customer } : a))
+        }
+      } catch {
+        // transient — next poll retries
+      }
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [active?.id, active?.status, active?.customer, refreshUser])
+
   // Report real device location to the customer while a delivery is active
   useEffect(() => {
     if (!active || !navigator.geolocation || !socket) return
@@ -232,7 +259,7 @@ export default function DriverHome() {
     <div className="min-h-screen bg-cream-100 pb-10">
       <div className="flex items-center justify-between px-5 pt-6">
         <div className="flex items-center gap-3">
-          <Avatar name={user?.name} size={48} />
+          <Avatar name={user?.name} size={48} src={avatarSrc(user?.avatarUrl)} />
           <div>
             <p className="text-sm text-slate-muted">Welcome back,</p>
             <p className="text-base font-extrabold text-navy-950">{user?.name}</p>
@@ -309,75 +336,43 @@ export default function DriverHome() {
         <div className="mt-8 px-5 text-center text-sm text-slate-muted">You're offline. Go online to start receiving delivery requests nearby.</div>
       )}
 
-    {incoming && !active && (
-      <div className="mt-6 px-5 animate-slide-up">
-        <div className="mx-auto w-full max-w-md rounded-3xl bg-white p-5 shadow-[var(--shadow-card)]">
-          
-          <p className="text-center text-xs font-bold uppercase tracking-wide text-amber-600">
-            New delivery request
-          </p>
-    
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-base font-extrabold text-navy-950">
-                {incoming.category} delivery
-              </p>
-              <p className="text-xs text-slate-muted">
-                {incoming.vehicle}
-              </p>
+      {incoming && !active && (
+        <div className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-md md:inset-x-auto md:left-64 md:right-0 animate-slide-up rounded-t-3xl bg-white p-5 shadow-2xl safe-bottom">
+          <p className="text-center text-xs font-bold uppercase tracking-wide text-amber-600">New delivery request</p>
+          <div className="mt-3 flex items-center justify-between">
+            <div>
+              <p className="text-base font-extrabold text-navy-950">{incoming.category} delivery</p>
+              <p className="text-xs text-slate-muted">{incoming.vehicle}</p>
             </div>
-    
-            <p className="shrink-0 text-lg font-extrabold text-navy-950">
-              {formatNaira(incoming.price)}
+            <p className="text-lg font-extrabold text-navy-950">{formatNaira(incoming.price)}</p>
+          </div>
+          <div className="mt-3 space-y-1.5 rounded-2xl bg-navy-900/5 p-3 text-sm">
+            <p className="flex items-start gap-1.5">
+              <MapPin size={14} className="mt-0.5 shrink-0 text-navy-900/50" />
+              <span><span className="text-slate-muted">From: </span>{incoming.pickup}</span>
+            </p>
+            <p className="flex items-start gap-1.5">
+              <MapPin size={14} className="mt-0.5 shrink-0 text-amber-600" />
+              <span><span className="text-slate-muted">To: </span>{incoming.dropoff}</span>
             </p>
           </div>
-    
-          <div className="mt-3 space-y-2 rounded-2xl bg-navy-900/5 p-3 text-sm">
-            <p className="flex items-start gap-2">
-              <MapPin
-                size={14}
-                className="mt-0.5 shrink-0 text-navy-900/50"
-              />
-              <span className="min-w-0">
-                <span className="text-slate-muted">From: </span>
-                {incoming.pickup}
-              </span>
-            </p>
-    
-            <p className="flex items-start gap-2">
-              <MapPin
-                size={14}
-                className="mt-0.5 shrink-0 text-amber-600"
-              />
-              <span className="min-w-0">
-                <span className="text-slate-muted">To: </span>
-                {incoming.dropoff}
-              </span>
-            </p>
-          </div>
-    
+          {(incoming.pickupLat != null || incoming.dropoffLat != null) && (
+            <LiveMap
+              pickup={{ lat: incoming.pickupLat, lng: incoming.pickupLng }}
+              dropoff={{ lat: incoming.dropoffLat, lng: incoming.dropoffLng }}
+              className="mt-3 h-28 rounded-2xl"
+            />
+          )}
           <div className="mt-4 flex gap-3">
-            <Button
-              variant="outline"
-              full
-              onClick={() => declineRequest(incoming.id)}
-              disabled={busy}
-            >
+            <Button variant="outline" full onClick={() => declineRequest(incoming.id)} disabled={busy}>
               Decline
             </Button>
-    
-            <Button
-              full
-              onClick={() => acceptRequest(incoming)}
-              disabled={busy}
-            >
+            <Button full onClick={() => acceptRequest(incoming)} disabled={busy}>
               Accept
             </Button>
           </div>
-    
         </div>
-      </div>
-    )}
+      )}
 
       {active && (
         <div className="mt-6 px-5">
@@ -425,6 +420,26 @@ export default function DriverHome() {
               <div className="mt-4 flex items-center justify-center gap-2 rounded-2xl bg-navy-900/5 py-3 text-sm font-semibold text-navy-900/60">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" /> Waiting for customer to confirm…
               </div>
+            )}
+            {active.status === 'enroute' && (
+              <button
+                onClick={async () => {
+                  if (!window.confirm("Cancel this delivery? Let the customer know why if you can.")) return
+                  setBusy(true)
+                  try {
+                    await api.post(`/api/orders/${active.id}/cancel`)
+                    setActive(null)
+                  } catch {
+                    // ignore — order may have already moved on
+                  } finally {
+                    setBusy(false)
+                  }
+                }}
+                disabled={busy}
+                className="tap mt-2 w-full rounded-2xl border border-danger/30 py-3 text-center text-sm font-semibold text-danger"
+              >
+                Cancel delivery
+              </button>
             )}
           </Card>
         </div>

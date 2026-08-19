@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { db, uid } from '../db.js'
 import { requireAuth } from '../middleware/auth.js'
 import { serializeTransaction } from '../utils/serialize.js'
+import { sendPushToUser } from '../utils/push.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -70,8 +71,14 @@ router.get('/topup/verify/:reference', async (req, res) => {
     const txn = db.prepare('SELECT * FROM transactions WHERE reference = ?').get(reference)
 
     if (data.status && data.data.status === 'success' && txn && txn.status === 'pending') {
-      db.prepare('UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?').run(txn.amount, txn.user_id)
       db.prepare(`UPDATE transactions SET status = 'successful' WHERE id = ?`).run(txn.id)
+      db.prepare('UPDATE users SET wallet_balance = wallet_balance + ? WHERE id = ?').run(txn.amount, txn.user_id)
+      sendPushToUser(txn.user_id, {
+        title: 'Wallet topped up',
+        body: `₦${txn.amount.toLocaleString()} was added to your Kaya wallet.`,
+        url: '/app/wallet',
+        tag: `topup-${reference}`,
+      }).catch((err) => console.error('[push] topup notify failed:', err.message))
     }
 
     res.json({ status: data.data?.status || 'failed', balance: getBalance(req.user.id) })
@@ -86,6 +93,12 @@ function creditWallet(userId, amount, reference, label) {
   db.prepare(
     'INSERT INTO transactions (id, user_id, type, label, amount, reference, status) VALUES (?, ?, ?, ?, ?, ?, ?)'
   ).run(uid('txn'), userId, 'credit', label, amount, reference, 'successful')
+  sendPushToUser(userId, {
+    title: 'Wallet topped up',
+    body: `₦${amount.toLocaleString()} was added to your Kaya wallet.`,
+    url: '/app/wallet',
+    tag: `topup-${reference}`,
+  }).catch((err) => console.error('[push] topup notify failed:', err.message))
 }
 
 function getBalance(userId) {

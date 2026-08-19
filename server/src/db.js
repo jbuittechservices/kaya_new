@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS users (
   avatar_url TEXT,
   status TEXT NOT NULL DEFAULT 'active', -- active | suspended
   wallet_balance INTEGER NOT NULL DEFAULT 0,
-  rider_rating REAL DEFAULT 4.8,
+  rider_rating REAL DEFAULT NULL,
   rider_trips INTEGER DEFAULT 0,
   rider_vehicle TEXT,
   rider_plate TEXT,
@@ -134,7 +134,7 @@ ensureColumn('users', 'bank_name', 'bank_name TEXT')
 ensureColumn('users', 'bank_account_number', 'bank_account_number TEXT')
 ensureColumn('users', 'bank_account_name', 'bank_account_name TEXT')
 ensureColumn('users', 'documents_json', 'documents_json TEXT')
-ensureColumn('users', 'customer_rating', 'customer_rating REAL DEFAULT 5.0')
+ensureColumn('users', 'customer_rating', 'customer_rating REAL DEFAULT NULL')
 ensureColumn('users', 'customer_rating_count', 'customer_rating_count INTEGER DEFAULT 0')
 // 'rating'/'rating_comment' (already on orders) is the customer's rating OF the rider.
 // These are the reverse direction — the rider's rating OF the customer.
@@ -145,6 +145,8 @@ ensureColumn('users', 'guarantor_name', 'guarantor_name TEXT')
 ensureColumn('users', 'guarantor_phone', 'guarantor_phone TEXT')
 ensureColumn('users', 'guarantor_relationship', 'guarantor_relationship TEXT')
 ensureColumn('users', 'guarantor_address', 'guarantor_address TEXT')
+ensureColumn('conversations', 'customer_last_read_at', 'customer_last_read_at TEXT')
+ensureColumn('conversations', 'rider_last_read_at', 'rider_last_read_at TEXT')
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS push_subscriptions (
@@ -162,6 +164,16 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+`)
+
+// One-time cleanup for deployments that already exist from before ratings had a real
+// "no rating yet" state: every driver/customer used to start with a fabricated 4.8/5.0
+// shown as if it were earned. Only touches accounts with zero actual trips/ratings
+// behind them — anyone with real history keeps their real (possibly coincidentally
+// identical-looking) earned average untouched.
+db.exec(`
+  UPDATE users SET rider_rating = NULL WHERE role = 'driver' AND rider_rating = 4.8 AND (rider_trips IS NULL OR rider_trips = 0);
+  UPDATE users SET customer_rating = NULL WHERE customer_rating = 5.0 AND (customer_rating_count IS NULL OR customer_rating_count = 0);
 `)
 
 export function uid(prefix = 'id') {

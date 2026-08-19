@@ -3,6 +3,7 @@ import { LayoutDashboard, Users, Bike, Package, Receipt, Settings, LogOut } from
 import { useAuth } from '../../context/AuthContext'
 import { Avatar } from '../../components/ui/Misc'
 import Logo from '../../components/ui/Logo'
+import { avatarSrc } from '../../lib/api'
 
 const LINKS = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -48,7 +49,7 @@ export default function AdminShell() {
 
         <div className="rounded-2xl bg-navy-900/5 p-3">
           <div className="mb-2 flex items-center gap-2">
-            <Avatar name={user?.name} size={38} tone="navy" />
+            <Avatar name={user?.name} size={38} tone="navy" src={avatarSrc(user?.avatarUrl)} />
             <div className="min-w-0">
               <p className="truncate text-sm font-bold text-navy-950">{user?.name}</p>
               <p className="truncate text-xs text-slate-muted">{user?.phone}</p>

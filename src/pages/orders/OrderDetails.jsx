@@ -105,7 +105,8 @@ export default function OrderDetails() {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-navy-950">{rider.name}</p>
                 <p className="flex items-center gap-1 text-xs text-slate-muted">
-                  <Star size={12} className="fill-[#FFB800] text-[#FFB800]" /> {rider.rating} · {rider.vehicle}
+                  <Star size={12} className="fill-[#FFB800] text-[#FFB800]" />{' '}
+                  {rider.trips > 0 ? `${rider.rating} · ${rider.vehicle}` : `New rider · ${rider.vehicle}`}
                 </p>
               </div>
               {order.rating ? (
