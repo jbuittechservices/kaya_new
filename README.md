@@ -123,7 +123,7 @@ skips accounts that already exist).
 - Real Google Maps throughout (address autocomplete, live route + markers, real-time rider
   position) — falls back to an illustrated placeholder map when no API key is configured
 - Real Kaya brand (logo, `#00ABFD` blue / white / black) applied throughout both apps
-- **22 automated regression tests** (`npm test` in `server/`) covering every bug found during
+- **30 automated regression tests** (`npm test` in `server/`) covering every bug found during
   hardening — see "Automated tests" below
 
 ## Environment variables
@@ -158,10 +158,13 @@ cd server
 npm test
 ```
 
-22 tests, all exercising the real Express app over real HTTP against a fresh throwaway SQLite
-database (spun up and torn down per run) — not mocks. They cover the exact bugs found during
-hardening, so they act as regression tests: wallet balance can never go negative, ratings are
-validated and can't be submitted twice, a driver can't self-verify their own documents, admin
+30 tests, all exercising the real Express app over real HTTP against a fresh throwaway SQLite
+database (spun up and torn down per run) — not mocks, including real signups driven through the
+actual phone → OTP → account flow (the test harness captures the dev-mode OTP codes straight
+from server output). They cover the exact bugs found during hardening, so they act as regression
+tests: wallet balance can never go negative, ratings are validated and can't be submitted twice
+in either direction, a driver can't self-verify their own documents, a freshly signed-up driver
+is blocked from accepting or even seeing deliveries until an admin approves them, admin
 pagination is clamped and can't be forced unbounded, a suspended account is rejected everywhere
 (login, REST, with the right error code), OTP requests are cooldown-limited, and — the two most
 important ones — 5 simultaneous accept requests on one order resolve to exactly 1 success, and
@@ -354,6 +357,30 @@ to production noted in code comments, are:
 
 This app went through several rounds of a genuine audit (not just a read-through — every item
 below was reproduced against the live running server before being fixed, and re-verified after):
+
+- **Driver verification gating**: a driver can no longer receive, see, or accept deliveries until
+  an admin has approved their submitted documents and guarantor details (all three onboarding
+  steps — personal info, documents, guarantor — are required; only personal info is
+  self-attested, the other two can only be granted by an admin). Enforced independently at every
+  layer that matters — going online, listing available orders, and accepting one — so a client
+  can't bypass it by skipping the UI. The onboarding checklist automatically stops showing on a
+  driver's dashboard once they're fully verified. Verified with real signups run through the
+  actual OTP flow, not shortcuts: a fresh driver is blocked, an admin approval unblocks them.
+- **Bidirectional ratings**: drivers can now rate customers after a delivery too, not just the
+  other way around — same validation (1–5, one per order) and completely independent from the
+  customer's rating of the rider, so one can't affect the other. The driver-side rating prompt
+  and the "you can't go online yet" notice both had their logic already wired up from earlier
+  work but were never actually rendered anywhere in the UI — fixed.
+
+- **Profile pictures**: the "Upload image" button on both the customer and driver Account pages
+  was purely decorative — no file input, no upload logic, nothing behind it. Now fully wired up:
+  real upload with type/size validation, immediate display, old photo cleaned up automatically on
+  re-upload, served publicly (like any normal profile photo) rather than needing an authenticated
+  fetch the way driver verification documents do. Also propagated to every place you see *someone
+  else's* photo, not just your own — the rider-found/tracking screen, order details on both sides,
+  chat (header + conversation list), the driver's active-delivery view, and the admin dashboard.
+  One of those (the driver's view of a customer) was previously a hardcoded "Customer" placeholder
+  with no real data behind it at all — that's now the customer's actual name, phone, and photo.
 
 - **Real-time reliability**: the app's socket listeners (order tracking, chat, driver dispatch)
   were attached in a `useEffect` that assumed the socket connection already existed — but the

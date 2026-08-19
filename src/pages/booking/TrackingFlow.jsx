@@ -6,6 +6,7 @@ import { BackHeader, Avatar } from '../../components/ui/Misc'
 import LiveMap from '../../components/ui/LiveMap'
 import Button from '../../components/ui/Button'
 import { formatNaira } from '../../utils/format'
+import { avatarSrc } from '../../lib/api'
 
 const PHASE_COPY = {
   enroute: { title: 'Rider is on the way', desc: 'Heading to your pickup point' },
@@ -81,7 +82,7 @@ function FoundPanel({ draft, onAccept, onCancel }) {
     <div className="animate-slide-up space-y-4">
       <div className="rounded-3xl bg-white p-4 shadow-[var(--shadow-card)]">
         <div className="flex items-center gap-3">
-          <Avatar name={rider.name} size={52} />
+          <Avatar name={rider.name} size={52} src={avatarSrc(rider.avatarUrl)} />
           <div className="min-w-0 flex-1">
             <p className="text-base font-bold text-navy-950">{rider.name}</p>
             <p className="flex items-center gap-1 text-sm text-slate-muted">
@@ -116,7 +117,7 @@ function LivePanel({ draft, phase, navigate }) {
     <div className="animate-fade-in space-y-4">
       <div className="rounded-3xl bg-white p-4 shadow-[var(--shadow-card)]">
         <div className="flex items-center gap-3">
-          <Avatar name={rider?.name} size={52} />
+          <Avatar name={rider?.name} size={52} src={avatarSrc(rider?.avatarUrl)} />
           <div className="min-w-0 flex-1">
             <p className="text-base font-bold text-navy-950">{rider?.name}</p>
             <p className="text-sm text-slate-muted">{rider?.vehicle}</p>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Phone, MessageCircle } from 'lucide-react'
-import { api } from '../../lib/api'
+import { api, avatarSrc } from '../../lib/api'
 import { BackHeader, StatusBadge, Avatar } from '../../components/ui/Misc'
 import LiveMap from '../../components/ui/LiveMap'
 import { formatNaira, formatDate, formatTime } from '../../utils/format'
@@ -43,7 +43,7 @@ export default function DriverOrderDetails() {
     )
   }
 
-  const { order } = data
+  const { order, customer } = data
   const category = PACKAGE_CATEGORIES.find((c) => c.id === order.category)
   const CategoryIcon = CATEGORY_ICONS[order.category]
   const earning = order.status === 'delivered' ? Math.round(order.price * (1 - PLATFORM_FEE_PCT)) : null
@@ -79,15 +79,15 @@ export default function DriverOrderDetails() {
 
         <div className="rounded-3xl bg-white p-4 shadow-[var(--shadow-card)]">
           <div className="flex items-center gap-3">
-            <Avatar name="Customer" size={44} />
+            <Avatar name={customer?.name} size={44} src={avatarSrc(customer?.avatarUrl)} />
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-bold text-navy-950">Customer</p>
-              <p className="text-xs text-slate-muted">{order.senderPhone || 'Contact via chat'}</p>
+              <p className="text-sm font-bold text-navy-950">{customer?.name || 'Customer'}</p>
+              <p className="text-xs text-slate-muted">{order.senderPhone || customer?.phone || 'Contact via chat'}</p>
             </div>
             <div className="flex gap-2">
               <a
-                href={order.senderPhone ? `tel:${order.senderPhone}` : undefined}
-                className={`tap flex h-9 w-9 items-center justify-center rounded-full bg-navy-900/5 ${!order.senderPhone ? 'pointer-events-none opacity-40' : ''}`}
+                href={order.senderPhone || customer?.phone ? `tel:${order.senderPhone || customer?.phone}` : undefined}
+                className={`tap flex h-9 w-9 items-center justify-center rounded-full bg-navy-900/5 ${!(order.senderPhone || customer?.phone) ? 'pointer-events-none opacity-40' : ''}`}
               >
                 <Phone size={15} className="text-navy-900" />
               </a>

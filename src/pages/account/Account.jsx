@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { Bike, LogOut, ChevronRight, Check, Camera, Plus } from 'lucide-react'
 import { LOCATION_ICONS, MapPin } from '../../lib/icons'
-import { api } from '../../lib/api'
+import { api, BASE_URL, getToken, avatarSrc } from '../../lib/api'
 import { useAuth } from '../../context/AuthContext'
 import { useAppData } from '../../context/AppDataContext'
 import { Avatar, Card } from '../../components/ui/Misc'
@@ -26,7 +26,7 @@ export default function Account() {
   return (
     <div className="px-5 pt-6 pb-8 md:px-0">
       <div className="mb-6 flex items-center gap-3">
-        <Avatar name={user?.name} size={56} />
+        <Avatar name={user?.name} size={56} src={avatarSrc(user?.avatarUrl)} />
         <div>
           <h1 className="text-lg font-extrabold text-navy-950">{user?.name}</h1>
           <p className="text-sm text-slate-muted">{user?.email}</p>
@@ -76,10 +76,13 @@ export default function Account() {
 }
 
 function ProfileTab({ user, updateProfile }) {
+  const { refreshUser } = useAuth()
   const [form, setForm] = useState({ name: user?.name || '', phone: user?.phone || '', email: user?.email || '' })
   const [saved, setSaved] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const [avatarError, setAvatarError] = useState(null)
 
   async function apply(e) {
     e.preventDefault()
@@ -96,15 +99,45 @@ function ProfileTab({ user, updateProfile }) {
     }
   }
 
+  async function handleAvatarChange(file) {
+    if (!file) return
+    setAvatarError(null)
+    setAvatarUploading(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res = await fetch(`${BASE_URL}/api/auth/me/avatar`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getToken()}` },
+        body: form,
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Upload failed')
+      await refreshUser()
+    } catch (err) {
+      setAvatarError(err.message)
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
+
   return (
     <form onSubmit={apply} className="space-y-4">
       <div className="flex items-center gap-4 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
-        <Avatar name={user?.name} size={56} />
-        <div>
-          <p className="flex items-center gap-1.5 text-sm font-semibold text-navy-950">
-            <Camera size={15} /> Upload image
-          </p>
+        <Avatar name={user?.name} size={56} src={avatarSrc(user?.avatarUrl)} />
+        <div className="min-w-0">
+          <label className="tap flex w-fit cursor-pointer items-center gap-1.5 text-sm font-semibold text-navy-950">
+            <Camera size={15} /> {avatarUploading ? 'Uploading…' : user?.avatarUrl ? 'Change photo' : 'Upload image'}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              disabled={avatarUploading}
+              onChange={(e) => handleAvatarChange(e.target.files?.[0])}
+            />
+          </label>
           <p className="text-xs text-slate-muted">Min 400×400px, PNG or JPEG</p>
+          {avatarError && <p className="mt-1 text-xs font-medium text-danger">{avatarError}</p>}
         </div>
       </div>
       <Input label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Star } from 'lucide-react'
-import { api } from '../../lib/api'
+import { api, avatarSrc } from '../../lib/api'
 import { useAppData } from '../../context/AppDataContext'
 import { BackHeader, StatusBadge, Avatar } from '../../components/ui/Misc'
 import LiveMap from '../../components/ui/LiveMap'
@@ -87,7 +87,7 @@ export default function OrderDetails() {
           <div className="rounded-3xl bg-white p-4 shadow-[var(--shadow-card)]">
             <p className="mb-3 text-sm font-bold text-navy-950">Rider</p>
             <div className="flex items-center gap-3">
-              <Avatar name={rider.name} size={48} />
+              <Avatar name={rider.name} size={48} src={avatarSrc(rider.avatarUrl)} />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-bold text-navy-950">{rider.name}</p>
                 <p className="flex items-center gap-1 text-xs text-slate-muted">

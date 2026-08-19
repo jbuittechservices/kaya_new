@@ -134,6 +134,17 @@ ensureColumn('users', 'bank_name', 'bank_name TEXT')
 ensureColumn('users', 'bank_account_number', 'bank_account_number TEXT')
 ensureColumn('users', 'bank_account_name', 'bank_account_name TEXT')
 ensureColumn('users', 'documents_json', 'documents_json TEXT')
+ensureColumn('users', 'customer_rating', 'customer_rating REAL DEFAULT 5.0')
+ensureColumn('users', 'customer_rating_count', 'customer_rating_count INTEGER DEFAULT 0')
+// 'rating'/'rating_comment' (already on orders) is the customer's rating OF the rider.
+// These are the reverse direction — the rider's rating OF the customer.
+ensureColumn('orders', 'customer_rating', 'customer_rating INTEGER')
+ensureColumn('orders', 'customer_rating_comment', 'customer_rating_comment TEXT')
+ensureColumn('users', 'vehicle_type', 'vehicle_type TEXT') // 'bike' | 'car' | 'van' — must match order.vehicle for dispatch matching
+ensureColumn('users', 'guarantor_name', 'guarantor_name TEXT')
+ensureColumn('users', 'guarantor_phone', 'guarantor_phone TEXT')
+ensureColumn('users', 'guarantor_relationship', 'guarantor_relationship TEXT')
+ensureColumn('users', 'guarantor_address', 'guarantor_address TEXT')
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS push_subscriptions (

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Search, Ban, CheckCircle2, BadgeCheck, Star, FileText, Eye, ChevronDown } from 'lucide-react'
-import { api, BASE_URL, getToken } from '../../lib/api'
+import { api, BASE_URL, getToken, avatarSrc } from '../../lib/api'
 import { Avatar, Card } from '../../components/ui/Misc'
 import LoadMoreButton from '../../components/ui/LoadMoreButton'
 
@@ -72,11 +72,12 @@ export default function AdminDrivers() {
             const verified = u.onboarding?.personalInfo && u.onboarding?.documents && u.onboarding?.guarantor
             const docs = u.documents || {}
             const hasDocs = docs.id || docs.license
+            const hasGuarantor = !!(u.guarantorName && u.guarantorPhone)
             const isExpanded = expanded === u.id
             return (
               <Card key={u.id}>
                 <div className="flex flex-wrap items-center gap-3">
-                  <Avatar name={u.name} size={44} />
+                  <Avatar name={u.name} size={44} src={avatarSrc(u.avatarUrl)} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-bold text-navy-950">{u.name}</p>
                     <p className="flex items-center gap-1 truncate text-xs text-slate-muted">
@@ -100,9 +101,9 @@ export default function AdminDrivers() {
                   {!verified && (
                     <button
                       onClick={() => verify(u)}
-                      disabled={!hasDocs}
+                      disabled={!hasDocs || !hasGuarantor}
                       className="tap flex items-center gap-1.5 rounded-full bg-navy-900 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
-                      title={hasDocs ? 'Approve this rider' : 'No documents submitted yet'}
+                      title={hasDocs && hasGuarantor ? 'Approve this rider' : 'Documents and guarantor details are both required before verifying'}
                     >
                       <BadgeCheck size={14} /> Verify
                     </button>
@@ -140,6 +141,19 @@ export default function AdminDrivers() {
                         )
                       )
                     )}
+
+                    <div className="rounded-xl bg-navy-900/5 px-3 py-2.5">
+                      <p className="text-sm font-semibold text-navy-950">Guarantor</p>
+                      {hasGuarantor ? (
+                        <div className="mt-1 space-y-0.5 text-xs text-slate-muted">
+                          <p>{u.guarantorName} · {u.guarantorRelationship}</p>
+                          <p>{u.guarantorPhone}</p>
+                          <p>{u.guarantorAddress}</p>
+                        </div>
+                      ) : (
+                        <p className="mt-1 text-xs text-slate-muted">Not submitted yet</p>
+                      )}
+                    </div>
                   </div>
                 )}
               </Card>

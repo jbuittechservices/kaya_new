@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Search, Ban, CheckCircle2 } from 'lucide-react'
-import { api } from '../../lib/api'
+import { api, avatarSrc } from '../../lib/api'
 import { formatNaira, formatDate } from '../../utils/format'
 import { Avatar, Card } from '../../components/ui/Misc'
 import LoadMoreButton from '../../components/ui/LoadMoreButton'
@@ -63,7 +63,7 @@ export default function AdminUsers() {
         ) : (
           users.map((u) => (
             <Card key={u.id} className="flex items-center gap-3">
-              <Avatar name={u.name} size={44} />
+              <Avatar name={u.name} size={44} src={avatarSrc(u.avatarUrl)} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-bold text-navy-950">{u.name}</p>
                 <p className="truncate text-xs text-slate-muted">{u.phone} · {u.email || 'No email'}</p>

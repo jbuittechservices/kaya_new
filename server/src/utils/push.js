@@ -57,14 +57,22 @@ export async function sendPushToUser(userId, { title, body, url, tag }) {
 }
 
 /** Pushes to every active driver who has notifications enabled — used for new delivery broadcasts. */
-export async function sendPushToActiveDrivers(payload, excludeUserId) {
+export async function sendPushToActiveDrivers(payload, excludeUserId, vehicleType) {
   if (!pushConfigured) return
   const rows = db
     .prepare(
-      `SELECT DISTINCT u.id FROM users u
+      `SELECT DISTINCT u.id, u.onboarding_json, u.vehicle_type FROM users u
        JOIN push_subscriptions ps ON ps.user_id = u.id
        WHERE u.role = 'driver' AND u.status = 'active' AND u.id != ?`
     )
     .all(excludeUserId || '')
-  await Promise.all(rows.map((r) => sendPushToUser(r.id, payload)))
+
+  const eligible = rows.filter((r) => {
+    const onboarding = r.onboarding_json ? JSON.parse(r.onboarding_json) : {}
+    const verified = !!(onboarding.personalInfo && onboarding.documents && onboarding.guarantor)
+    if (!verified) return false
+    return !vehicleType || r.vehicle_type === vehicleType
+  })
+
+  await Promise.all(eligible.map((r) => sendPushToUser(r.id, payload)))
 }

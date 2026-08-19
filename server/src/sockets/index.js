@@ -2,6 +2,7 @@ import { Server } from 'socket.io'
 import { verifyToken } from '../utils/jwt.js'
 import { db } from '../db.js'
 import * as bus from './bus.js'
+import { isDriverVerified } from '../utils/driverVerification.js'
 
 export function initSockets(httpServer, corsOrigin) {
   const io = new Server(httpServer, {
@@ -31,7 +32,20 @@ export function initSockets(httpServer, corsOrigin) {
     if (role === 'admin') socket.join('admins')
 
     if (role === 'driver') {
-      socket.on('driver:online', () => bus.markDriverOnline(id, socket.id))
+      socket.on('driver:online', () => {
+        // Re-fetch fresh — the user row cached at connect time could be stale if they
+        // were verified or suspended after this socket connection was established.
+        const current = db.prepare('SELECT * FROM users WHERE id = ?').get(id)
+        if (!current || !isDriverVerified(current)) {
+          socket.emit('driver:not-verified')
+          return
+        }
+        if (!current.vehicle_type) {
+          socket.emit('driver:no-vehicle-type')
+          return
+        }
+        bus.markDriverOnline(id, socket.id, current.vehicle_type)
+      })
       socket.on('driver:offline', () => bus.markDriverOffline(id))
       socket.on('disconnect', () => bus.markDriverOffline(id))
 

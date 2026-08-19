@@ -1,12 +1,12 @@
 let io = null
-const onlineDrivers = new Map() // userId -> socketId
+const onlineDrivers = new Map() // userId -> { socketId, vehicleType }
 
 export function setIO(instance) {
   io = instance
 }
 
-export function markDriverOnline(userId, socketId) {
-  onlineDrivers.set(userId, socketId)
+export function markDriverOnline(userId, socketId, vehicleType) {
+  onlineDrivers.set(userId, { socketId, vehicleType })
 }
 
 export function markDriverOffline(userId) {
@@ -22,11 +22,15 @@ export function emitToUser(userId, event, payload) {
   io.to(`user:${userId}`).emit(event, payload)
 }
 
-export function broadcastToOnlineDrivers(event, payload, excludeUserId) {
+// When vehicleType is provided, only online drivers whose own vehicle type matches
+// receive the event — used so a bike rider never gets pinged for a van-only delivery
+// they have no way to actually fulfill.
+export function broadcastToOnlineDrivers(event, payload, excludeUserId, vehicleType) {
   if (!io) return
-  for (const [userId, socketId] of onlineDrivers.entries()) {
+  for (const [userId, driver] of onlineDrivers.entries()) {
     if (userId === excludeUserId) continue
-    io.to(socketId).emit(event, payload)
+    if (vehicleType && driver.vehicleType !== vehicleType) continue
+    io.to(driver.socketId).emit(event, payload)
   }
 }
 

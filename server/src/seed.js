@@ -2,14 +2,14 @@ import 'dotenv/config'
 import bcrypt from 'bcryptjs'
 import { db, uid } from './db.js'
 
-async function upsertUser({ name, phone, email, password, role, vehicle, plate, walletBalance = 0 }) {
+async function upsertUser({ name, phone, email, password, role, vehicle, plate, vehicleType, walletBalance = 0 }) {
   const existing = db.prepare('SELECT id FROM users WHERE phone = ?').get(phone)
   if (existing) return existing.id
   const id = uid('usr')
   const hash = await bcrypt.hash(password, 10)
   db.prepare(
-    `INSERT INTO users (id, name, phone, email, password_hash, role, wallet_balance, rider_vehicle, rider_plate, onboarding_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO users (id, name, phone, email, password_hash, role, wallet_balance, rider_vehicle, rider_plate, vehicle_type, onboarding_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     name,
@@ -20,6 +20,7 @@ async function upsertUser({ name, phone, email, password, role, vehicle, plate, 
     walletBalance,
     vehicle || null,
     plate || null,
+    vehicleType || null,
     role === 'driver' ? JSON.stringify({ personalInfo: true, documents: true, guarantor: true }) : null
   )
   return id
@@ -53,10 +54,12 @@ async function main() {
     role: 'driver',
     vehicle: 'Bajaj Boxer · Red',
     plate: 'KJA 442 XL',
+    vehicleType: 'bike',
     walletBalance: 4200,
   })
 
   db.prepare(`UPDATE users SET rider_rating = 4.9, rider_trips = 1284 WHERE id = ?`).run(riderId)
+  db.prepare(`UPDATE users SET vehicle_type = COALESCE(vehicle_type, 'bike') WHERE id = ?`).run(riderId)
 
   const existingLocations = db.prepare('SELECT COUNT(*) n FROM saved_locations WHERE user_id = ?').get(customerId).n
   if (existingLocations === 0) {

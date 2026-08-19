@@ -58,4 +58,10 @@ export const api = {
   delete: (path) => request(path, { method: 'DELETE' }),
 }
 
+/** Backend returns avatar paths like "/uploads/avatars/..." — resolve them against the API's own origin. */
+export function avatarSrc(avatarUrl) {
+  if (!avatarUrl) return undefined
+  return avatarUrl.startsWith('http') ? avatarUrl : `${BASE_URL}${avatarUrl}`
+}
+
 export { BASE_URL }

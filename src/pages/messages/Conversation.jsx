@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { Phone, Send } from 'lucide-react'
-import { api } from '../../lib/api'
+import { api, avatarSrc } from '../../lib/api'
 import { useSocket } from '../../lib/socket'
 import { useAuth } from '../../context/AuthContext'
 import { useAppData } from '../../context/AppDataContext'
-import { BackHeader } from '../../components/ui/Misc'
+import { BackHeader, Avatar } from '../../components/ui/Misc'
 import { formatTime } from '../../utils/format'
 
 const QUICK_REPLIES = ['Hello', 'Where are you?', "I'm at the gate", 'Thank you!']
@@ -82,6 +82,7 @@ export default function Conversation() {
       <BackHeader
         title={convo?.participant?.name || 'Chat'}
         subtitle={convo?.participant?.vehicle}
+        avatar={<Avatar name={convo?.participant?.name} size={40} src={avatarSrc(convo?.participant?.avatarUrl)} />}
         right={
           <a
             href={convo?.participant?.phone ? `tel:${convo.participant.phone}` : undefined}

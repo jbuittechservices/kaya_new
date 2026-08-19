@@ -17,12 +17,12 @@ router.get('/', (req, res) => {
     .all(req.user.id)
 
   const conversations = rows.map((c) => {
-    const other = db.prepare('SELECT id, name, phone, rider_rating, rider_vehicle FROM users WHERE id = ?').get(c[otherColumn])
+    const other = db.prepare('SELECT id, name, phone, rider_rating, rider_vehicle, avatar_url FROM users WHERE id = ?').get(c[otherColumn])
     const last = db.prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1').get(c.id)
     return {
       id: c.id,
       orderId: c.order_id,
-      participant: other ? { id: other.id, name: other.name, phone: other.phone, rating: other.rider_rating, vehicle: other.rider_vehicle } : null,
+      participant: other ? { id: other.id, name: other.name, phone: other.phone, rating: other.rider_rating, vehicle: other.rider_vehicle, avatarUrl: other.avatar_url } : null,
       lastMessage: last?.text || null,
       lastMessageAt: last?.created_at || c.created_at,
     }

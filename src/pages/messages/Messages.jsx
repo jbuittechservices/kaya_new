@@ -3,6 +3,7 @@ import { MessageCircle } from 'lucide-react'
 import { useAppData } from '../../context/AppDataContext'
 import { Avatar, EmptyState } from '../../components/ui/Misc'
 import { timeAgo } from '../../utils/format'
+import { avatarSrc } from '../../lib/api'
 
 export default function Messages() {
   const { conversations } = useAppData()
@@ -23,7 +24,7 @@ export default function Messages() {
               onClick={() => navigate(`/app/messages/${c.id}`)}
               className="tap flex w-full items-center gap-3 rounded-2xl px-2 py-3 text-left hover:bg-white"
             >
-              <Avatar name={c.participant?.name} size={48} />
+              <Avatar name={c.participant?.name} size={48} src={avatarSrc(c.participant?.avatarUrl)} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between">
                   <p className="truncate text-sm font-bold text-navy-950">{c.participant?.name || 'Rider'}</p>

@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import express from 'express'
 import http from 'node:http'
+import path from 'node:path'
 import cors from 'cors'
 import helmet from 'helmet'
 import compression from 'compression'
@@ -8,6 +9,7 @@ import morgan from 'morgan'
 import rateLimit from 'express-rate-limit'
 
 import { checkEnv } from './utils/checkEnv.js'
+import { DATA_DIR } from './db.js'
 import authRoutes from './routes/auth.js'
 import locationRoutes from './routes/locations.js'
 import orderRoutes from './routes/orders.js'
@@ -36,6 +38,13 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'))
 app.use('/api/webhooks', express.raw({ type: '*/*' }), webhookRoutes)
 
 app.use(express.json({ limit: '2mb' }))
+
+// Profile pictures are low-sensitivity and meant to be visible to whoever's looking at a
+// person's profile (the other party in a delivery, admins, etc.) — so unlike driver
+// verification documents (served only through authenticated routes in drivers.js/admin.js),
+// these are plain static files. Deliberately scoped to just this subfolder, not all of
+// DATA_DIR/uploads, so documents stay private.
+app.use('/uploads/avatars', express.static(path.join(DATA_DIR, 'uploads', 'avatars'), { maxAge: '7d' }))
 
 const authLimiter = rateLimit({ windowMs: 15 * 60_000, max: 30, standardHeaders: true, legacyHeaders: false })
 app.use('/api/auth', authLimiter, authRoutes)

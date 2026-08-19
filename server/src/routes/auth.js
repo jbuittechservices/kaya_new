@@ -1,12 +1,50 @@
 import { Router } from 'express'
 import bcrypt from 'bcryptjs'
-import { db, uid } from '../db.js'
+import multer from 'multer'
+import path from 'node:path'
+import fs from 'node:fs'
+import { db, uid, DATA_DIR } from '../db.js'
 import { createOtp, verifyOtp, OtpError } from '../utils/otp.js'
 import { signToken } from '../utils/jwt.js'
 import { serializeUser } from '../utils/serialize.js'
 import { requireAuth } from '../middleware/auth.js'
 
 const router = Router()
+
+const AVATAR_DIR = path.join(DATA_DIR, 'uploads', 'avatars')
+fs.mkdirSync(AVATAR_DIR, { recursive: true })
+const ALLOWED_AVATAR_MIME = new Set(['image/jpeg', 'image/png', 'image/webp'])
+
+const avatarUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, _file, cb) => {
+      const dir = path.join(AVATAR_DIR, req.user.id)
+      fs.mkdirSync(dir, { recursive: true })
+      cb(null, dir)
+    },
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).slice(0, 10).replace(/[^a-zA-Z0-9.]/g, '') || '.jpg'
+      cb(null, `avatar-${Date.now()}${ext}`)
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: (req, file, cb) => {
+    if (!ALLOWED_AVATAR_MIME.has(file.mimetype)) {
+      const err = new Error('Only JPEG, PNG, or WebP images are allowed')
+      err.status = 400
+      return cb(err)
+    }
+    cb(null, true)
+  },
+})
+
+function handleAvatarUpload(req, res, next) {
+  avatarUpload.single('file')(req, res, (err) => {
+    if (!err) return next()
+    if (err instanceof multer.MulterError || err.status === 400) return res.status(400).json({ error: err.message })
+    next(err)
+  })
+}
 
 function normalizePhone(phone = '') {
   return phone.replace(/[^\d+]/g, '')
@@ -144,6 +182,21 @@ router.patch('/me', requireAuth, (req, res) => {
   )
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id)
   res.json({ user: serializeUser(user) })
+})
+
+router.post('/me/avatar', requireAuth, handleAvatarUpload, (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' })
+
+  // Clean up the previous avatar file so re-uploading doesn't accumulate orphaned images
+  if (req.user.avatar_url) {
+    const oldFilename = path.basename(req.user.avatar_url)
+    fs.rm(path.join(AVATAR_DIR, req.user.id, oldFilename), { force: true }, () => {})
+  }
+
+  const avatarUrl = `/uploads/avatars/${req.user.id}/${req.file.filename}`
+  db.prepare('UPDATE users SET avatar_url = ? WHERE id = ?').run(avatarUrl, req.user.id)
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id)
+  res.status(201).json({ user: serializeUser(user) })
 })
 
 router.post('/change-password', requireAuth, async (req, res) => {

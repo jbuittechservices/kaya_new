@@ -110,13 +110,25 @@ router.patch('/onboarding', (req, res) => {
   res.json({ onboarding: next })
 })
 
+const VALID_VEHICLE_TYPES = ['bike', 'car', 'van']
+
 router.patch('/vehicle', (req, res) => {
-  const { vehicle, plate } = req.body
-  db.prepare('UPDATE users SET rider_vehicle = COALESCE(?, rider_vehicle), rider_plate = COALESCE(?, rider_plate) WHERE id = ?').run(
-    vehicle || null,
-    plate || null,
-    req.user.id
-  )
+  const { vehicle, plate, vehicleType } = req.body
+  if (vehicleType !== undefined && !VALID_VEHICLE_TYPES.includes(vehicleType)) {
+    return res.status(400).json({ error: 'Vehicle type must be one of: bike, car, van' })
+  }
+  db.prepare(
+    'UPDATE users SET rider_vehicle = COALESCE(?, rider_vehicle), rider_plate = COALESCE(?, rider_plate), vehicle_type = COALESCE(?, vehicle_type) WHERE id = ?'
+  ).run(vehicle || null, plate || null, vehicleType || null, req.user.id)
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id)
+  res.json({ user: serializeUser(user) })
+})
+
+router.patch('/guarantor', (req, res) => {
+  const { name, phone, relationship, address } = req.body
+  db.prepare(
+    'UPDATE users SET guarantor_name = COALESCE(?, guarantor_name), guarantor_phone = COALESCE(?, guarantor_phone), guarantor_relationship = COALESCE(?, guarantor_relationship), guarantor_address = COALESCE(?, guarantor_address) WHERE id = ?'
+  ).run(name || null, phone || null, relationship || null, address || null, req.user.id)
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id)
   res.json({ user: serializeUser(user) })
 })

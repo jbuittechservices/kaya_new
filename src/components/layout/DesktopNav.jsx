@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { Avatar } from '../ui/Misc'
 import Logo from '../ui/Logo'
+import { avatarSrc } from '../../lib/api'
 
 const DEFAULT_LINKS = [
   { to: '/app', label: 'Home', end: true },
@@ -40,7 +41,7 @@ export default function DesktopNav({ links = DEFAULT_LINKS, footer, badge }) {
 
       <div className="rounded-2xl bg-navy-900/5 p-3">
         <div className="mb-2 flex items-center gap-2">
-          <Avatar name={user?.name} size={38} />
+          <Avatar name={user?.name} size={38} src={avatarSrc(user?.avatarUrl)} />
           <div className="min-w-0">
             <p className="truncate text-sm font-bold text-navy-950">{user?.name}</p>
             <p className="truncate text-xs text-slate-muted">{footer}</p>

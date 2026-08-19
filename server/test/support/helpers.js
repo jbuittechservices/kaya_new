@@ -10,6 +10,7 @@ const SERVER_ENTRY = path.join(__dirname, '..', '..', 'src', 'index.js')
 let serverProcess = null
 let dataDir = null
 let baseUrl = null
+let stdoutBuffer = ''
 
 async function waitForHealth(url, timeoutMs = 8000) {
   const start = Date.now()
@@ -30,6 +31,7 @@ export async function startTestServer() {
   dataDir = mkdtempSync(path.join(tmpdir(), 'kaya-test-'))
   const port = 4100 + Math.floor(Math.random() * 900)
   baseUrl = `http://localhost:${port}`
+  stdoutBuffer = ''
 
   serverProcess = spawn(
     process.execPath,
@@ -52,6 +54,11 @@ export async function startTestServer() {
   )
 
   serverProcess.stderr.on('data', () => {}) // keep test output clean; uncomment for debugging
+  // Dev-mode OTP delivery logs the code to stdout (see server/src/utils/otp.js) — capture
+  // it so tests can drive real signup flows instead of only testing pre-seeded accounts.
+  serverProcess.stdout.on('data', (chunk) => {
+    stdoutBuffer += chunk.toString()
+  })
 
   await waitForHealth(baseUrl)
 
@@ -100,6 +107,30 @@ export async function loginAs(phone, password) {
   const { body } = await request('POST', '/api/auth/login', { body: { phone, password } })
   if (!body?.token) throw new Error(`Login failed for ${phone}: ${JSON.stringify(body)}`)
   return body
+}
+
+/** Reads the most recent dev-mode OTP printed for a given phone number from captured stdout. */
+export async function waitForOtpCode(phone, timeoutMs = 4000) {
+  const start = Date.now()
+  const pattern = new RegExp(`\\[DEV OTP\\] ${phone.replace('+', '\\+')} → (\\d{4})`)
+  while (Date.now() - start < timeoutMs) {
+    const matches = [...stdoutBuffer.matchAll(new RegExp(pattern, 'g'))]
+    if (matches.length > 0) return matches[matches.length - 1][1] // most recent match
+    await new Promise((r) => setTimeout(r, 50))
+  }
+  throw new Error(`No OTP was ever printed for ${phone} within ${timeoutMs}ms`)
+}
+
+/** Drives a real signup end to end (request OTP → verify → complete) and returns the session. */
+export async function signUp({ phone, name, password = 'TestPass123', role = 'customer' }) {
+  const otpReq = await request('POST', '/api/auth/signup/request-otp', { body: { phone } })
+  if (otpReq.status !== 200) throw new Error(`OTP request failed: ${JSON.stringify(otpReq.body)}`)
+  const code = await waitForOtpCode(phone)
+  const verify = await request('POST', '/api/auth/signup/verify-otp', { body: { phone, code } })
+  if (verify.status !== 200) throw new Error(`OTP verify failed: ${JSON.stringify(verify.body)}`)
+  const complete = await request('POST', '/api/auth/signup/complete', { body: { phone, name, password, role } })
+  if (complete.status !== 201) throw new Error(`Signup complete failed: ${JSON.stringify(complete.body)}`)
+  return complete.body
 }
 
 export const SEEDED = {

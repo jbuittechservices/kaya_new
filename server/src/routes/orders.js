@@ -4,6 +4,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js'
 import { serializeOrder } from '../utils/serialize.js'
 import * as bus from '../sockets/bus.js'
 import { sendPushToUser, sendPushToActiveDrivers } from '../utils/push.js'
+import { isDriverVerified } from '../utils/driverVerification.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -52,15 +53,15 @@ router.post('/', (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(id)
   const payload = serializeOrder(order)
 
-  // Notify every online driver in real time, and push to any driver who has
-  // notifications enabled even if their app is closed/backgrounded right now.
-  bus.broadcastToOnlineDrivers('order:incoming', payload)
+  // Notify only online drivers whose vehicle type matches — a bike rider has no way to
+  // fulfill a van-only delivery, so there's no reason to interrupt them with it.
+  bus.broadcastToOnlineDrivers('order:incoming', payload, null, vehicle || 'bike')
   sendPushToActiveDrivers({
     title: 'New delivery request',
     body: `${pickup} → ${dropoff} · ₦${price.toLocaleString()}`,
     url: '/driver',
     tag: 'order-incoming',
-  }).catch((err) => console.error('[push] driver broadcast failed:', err.message))
+  }, null, vehicle || 'bike').catch((err) => console.error('[push] driver broadcast failed:', err.message))
 
   res.status(201).json({ order: payload })
 })
@@ -70,7 +71,10 @@ router.get('/', (req, res) => {
   const { status, search, availableOnly } = req.query
 
   if (req.user.role === 'driver' && availableOnly === 'true') {
-    const rows = db.prepare(`SELECT * FROM orders WHERE status = 'searching' AND rider_id IS NULL ORDER BY created_at DESC LIMIT 20`).all()
+    if (!isDriverVerified(req.user)) return res.json({ orders: [] })
+    const rows = req.user.vehicle_type
+      ? db.prepare(`SELECT * FROM orders WHERE status = 'searching' AND rider_id IS NULL AND vehicle = ? ORDER BY created_at DESC LIMIT 20`).all(req.user.vehicle_type)
+      : db.prepare(`SELECT * FROM orders WHERE status = 'searching' AND rider_id IS NULL ORDER BY created_at DESC LIMIT 20`).all()
     return res.json({ orders: rows.map(serializeOrder) })
   }
 
@@ -95,26 +99,36 @@ router.get('/:id', (req, res) => {
 
   let rider = null
   if (order.rider_id) {
-    const r = db.prepare('SELECT id, name, rider_rating, rider_trips, rider_vehicle, rider_plate, phone FROM users WHERE id = ?').get(order.rider_id)
-    if (r) rider = { id: r.id, name: r.name, rating: r.rider_rating, trips: r.rider_trips, vehicle: r.rider_vehicle, plate: r.rider_plate, phone: r.phone }
+    const r = db.prepare('SELECT id, name, rider_rating, rider_trips, rider_vehicle, rider_plate, vehicle_type, phone, avatar_url FROM users WHERE id = ?').get(order.rider_id)
+    if (r) rider = { id: r.id, name: r.name, rating: r.rider_rating, trips: r.rider_trips, vehicle: r.rider_vehicle, vehicleType: r.vehicle_type, plate: r.rider_plate, phone: r.phone, avatarUrl: r.avatar_url }
   }
 
-  res.json({ order: serializeOrder(order), rider })
+  let customer = null
+  const c = db.prepare('SELECT id, name, phone, avatar_url FROM users WHERE id = ?').get(order.customer_id)
+  if (c) customer = { id: c.id, name: c.name, phone: c.phone, avatarUrl: c.avatar_url }
+
+  res.json({ order: serializeOrder(order), rider, customer })
 })
 
 // Driver accepts a request
 router.post('/:id/accept', requireRole('driver'), (req, res) => {
+  if (!isDriverVerified(req.user)) {
+    return res.status(403).json({ error: 'Your account is not verified yet. Complete onboarding to start accepting deliveries.' })
+  }
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)
   if (!order) return res.status(404).json({ error: 'Order not found' })
   if (order.status !== 'searching' || order.rider_id) {
     return res.status(409).json({ error: 'This request has already been taken' })
   }
+  if (req.user.vehicle_type && req.user.vehicle_type !== order.vehicle) {
+    return res.status(400).json({ error: `This delivery needs a ${order.vehicle}, which doesn't match your registered vehicle type.` })
+  }
 
   db.prepare(`UPDATE orders SET rider_id = ?, status = 'enroute', updated_at = datetime('now') WHERE id = ?`).run(req.user.id, order.id)
   const updated = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id)
-  const rider = { id: req.user.id, name: req.user.name, rating: req.user.rider_rating, trips: req.user.rider_trips, vehicle: req.user.rider_vehicle, plate: req.user.rider_plate, phone: req.user.phone }
-  const customerRow = db.prepare('SELECT id, name, phone FROM users WHERE id = ?').get(order.customer_id)
-  const customer = customerRow ? { id: customerRow.id, name: customerRow.name, phone: customerRow.phone } : null
+  const rider = { id: req.user.id, name: req.user.name, rating: req.user.rider_rating, trips: req.user.rider_trips, vehicle: req.user.rider_vehicle, vehicleType: req.user.vehicle_type, plate: req.user.rider_plate, phone: req.user.phone, avatarUrl: req.user.avatar_url }
+  const customerRow = db.prepare('SELECT id, name, phone, avatar_url FROM users WHERE id = ?').get(order.customer_id)
+  const customer = customerRow ? { id: customerRow.id, name: customerRow.name, phone: customerRow.phone, avatarUrl: customerRow.avatar_url } : null
 
   // Create the chat channel for this trip up front
   const convoId = uid('conv')
@@ -244,6 +258,32 @@ router.post('/:id/rate', (req, res) => {
     const newAvg = (rider.rider_rating * (trips - 1) + rating) / trips
     db.prepare('UPDATE users SET rider_rating = ? WHERE id = ?').run(Math.round(newAvg * 10) / 10, order.rider_id)
   }
+
+  const updated = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id)
+  res.json({ order: serializeOrder(updated) })
+})
+
+router.post('/:id/rate-customer', requireRole('driver'), (req, res) => {
+  const rating = Number(req.body.rating)
+  const comment = typeof req.body.comment === 'string' ? req.body.comment.slice(0, 500) : null
+
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    return res.status(400).json({ error: 'Rating must be a whole number between 1 and 5' })
+  }
+
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)
+  if (!order) return res.status(404).json({ error: 'Order not found' })
+  if (order.rider_id !== req.user.id) return res.status(403).json({ error: 'Not your delivery' })
+  if (order.status !== 'delivered') return res.status(409).json({ error: 'You can only rate a completed delivery' })
+  if (order.customer_rating != null) return res.status(409).json({ error: 'You have already rated this customer' })
+
+  db.prepare('UPDATE orders SET customer_rating = ?, customer_rating_comment = ? WHERE id = ?').run(rating, comment, order.id)
+
+  const customer = db.prepare('SELECT customer_rating, customer_rating_count FROM users WHERE id = ?').get(order.customer_id)
+  const count = (customer?.customer_rating_count || 0) + 1
+  const currentAvg = customer?.customer_rating ?? 5.0
+  const newAvg = (currentAvg * (count - 1) + rating) / count
+  db.prepare('UPDATE users SET customer_rating = ?, customer_rating_count = ? WHERE id = ?').run(Math.round(newAvg * 10) / 10, count, order.customer_id)
 
   const updated = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id)
   res.json({ order: serializeOrder(updated) })
