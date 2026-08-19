@@ -309,36 +309,75 @@ export default function DriverHome() {
         <div className="mt-8 px-5 text-center text-sm text-slate-muted">You're offline. Go online to start receiving delivery requests nearby.</div>
       )}
 
-      {incoming && !active && (
-        <div className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-md md:inset-x-auto md:left-64 md:right-0 animate-slide-up rounded-t-3xl bg-white p-5 shadow-2xl safe-bottom">
-          <p className="text-center text-xs font-bold uppercase tracking-wide text-amber-600">New delivery request</p>
-          <div className="mt-3 flex items-center justify-between">
-            <div>
-              <p className="text-base font-extrabold text-navy-950">{incoming.category} delivery</p>
-              <p className="text-xs text-slate-muted">{incoming.vehicle}</p>
+    {incoming && !active && (
+      <div className="mt-6 px-5 animate-slide-up">
+        <div className="mx-auto w-full max-w-md rounded-3xl bg-white p-5 shadow-[var(--shadow-card)]">
+          
+          <p className="text-center text-xs font-bold uppercase tracking-wide text-amber-600">
+            New delivery request
+          </p>
+    
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-base font-extrabold text-navy-950">
+                {incoming.category} delivery
+              </p>
+              <p className="text-xs text-slate-muted">
+                {incoming.vehicle}
+              </p>
             </div>
-            <p className="text-lg font-extrabold text-navy-950">{formatNaira(incoming.price)}</p>
-          </div>
-          <div className="mt-3 space-y-1.5 rounded-2xl bg-navy-900/5 p-3 text-sm">
-            <p className="flex items-start gap-1.5">
-              <MapPin size={14} className="mt-0.5 shrink-0 text-navy-900/50" />
-              <span><span className="text-slate-muted">From: </span>{incoming.pickup}</span>
-            </p>
-            <p className="flex items-start gap-1.5">
-              <MapPin size={14} className="mt-0.5 shrink-0 text-amber-600" />
-              <span><span className="text-slate-muted">To: </span>{incoming.dropoff}</span>
+    
+            <p className="shrink-0 text-lg font-extrabold text-navy-950">
+              {formatNaira(incoming.price)}
             </p>
           </div>
+    
+          <div className="mt-3 space-y-2 rounded-2xl bg-navy-900/5 p-3 text-sm">
+            <p className="flex items-start gap-2">
+              <MapPin
+                size={14}
+                className="mt-0.5 shrink-0 text-navy-900/50"
+              />
+              <span className="min-w-0">
+                <span className="text-slate-muted">From: </span>
+                {incoming.pickup}
+              </span>
+            </p>
+    
+            <p className="flex items-start gap-2">
+              <MapPin
+                size={14}
+                className="mt-0.5 shrink-0 text-amber-600"
+              />
+              <span className="min-w-0">
+                <span className="text-slate-muted">To: </span>
+                {incoming.dropoff}
+              </span>
+            </p>
+          </div>
+    
           <div className="mt-4 flex gap-3">
-            <Button variant="outline" full onClick={() => declineRequest(incoming.id)} disabled={busy}>
+            <Button
+              variant="outline"
+              full
+              onClick={() => declineRequest(incoming.id)}
+              disabled={busy}
+            >
               Decline
             </Button>
-            <Button full onClick={() => acceptRequest(incoming)} disabled={busy}>
+    
+            <Button
+              full
+              onClick={() => acceptRequest(incoming)}
+              disabled={busy}
+            >
               Accept
             </Button>
           </div>
+    
         </div>
-      )}
+      </div>
+    )}
 
       {active && (
         <div className="mt-6 px-5">
