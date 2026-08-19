@@ -16,7 +16,7 @@ export default function DeliveryDetailsStep() {
   const vehicle = useMemo(() => VEHICLE_OPTIONS.find((v) => v.id === draft.vehicle) || VEHICLE_OPTIONS[0], [draft.vehicle])
 
   return (
-    <div className="min-h-screen bg-cream-100 pb-28">
+    <div className="min-h-screen bg-cream-100 pb-32 md:pb-0">
       <BackHeader title="Delivery details" onBack={cancelDraft} />
 
       <LiveMap
@@ -152,7 +152,7 @@ export default function DeliveryDetailsStep() {
         {draft.error && <p className="text-center text-sm font-medium text-danger">{draft.error}</p>}
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 mx-auto max-w-md border-t border-navy-900/8 bg-cream-100/95 px-5 py-4 backdrop-blur safe-bottom md:static md:mt-6 md:border-0 md:bg-transparent md:px-0">
+      <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-navy-900/8 bg-cream-100/95 px-5 py-4 backdrop-blur safe-bottom md:static md:z-auto md:mt-6 md:border-0 md:bg-transparent md:px-0">
         <Button full size="lg" disabled={!draft.dropoff} onClick={requestRider}>
           Confirm delivery
         </Button>
