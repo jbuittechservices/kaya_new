@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { Bike, LogOut, ChevronRight, Check, Camera, Plus } from 'lucide-react'
+import { Bike, LogOut, ChevronRight, Check, Camera, Plus, Star } from 'lucide-react'
 import { LOCATION_ICONS, MapPin } from '../../lib/icons'
 import { api, BASE_URL, getToken, avatarSrc } from '../../lib/api'
 import { useAuth } from '../../context/AuthContext'
@@ -30,6 +30,11 @@ export default function Account() {
         <div>
           <h1 className="text-lg font-extrabold text-navy-950">{user?.name}</h1>
           <p className="text-sm text-slate-muted">{user?.email}</p>
+          {user?.customerRatingCount > 0 && (
+            <p className="mt-0.5 flex items-center gap-1 text-xs font-semibold text-amber-600">
+              <Star size={12} className="fill-[#FFB800] text-[#FFB800]" /> {user.customerRating} rating from riders
+            </p>
+          )}
         </div>
       </div>
 

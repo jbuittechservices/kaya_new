@@ -86,6 +86,8 @@ test('REGRESSION: driver-to-customer rating — valid, range-checked, one per or
   await request('POST', `/api/orders/${orderId}/advance`, { token: driver.token })
   const delivered = await request('POST', `/api/orders/${orderId}/advance`, { token: driver.token })
   assert.equal(delivered.body.order.status, 'delivered')
+  const confirmed = await request('POST', `/api/orders/${orderId}/confirm-delivery`, { token: customer.token })
+  assert.equal(confirmed.body.order.status, 'completed')
 
   const tooHigh = await request('POST', `/api/orders/${orderId}/rate-customer`, { token: driver.token, body: { rating: 999 } })
   assert.equal(tooHigh.status, 400)
@@ -115,6 +117,7 @@ test('both ratings on the same order are independent — rating one direction do
   await request('POST', `/api/orders/${orderId}/advance`, { token: driver.token })
   await request('POST', `/api/orders/${orderId}/advance`, { token: driver.token })
   await request('POST', `/api/orders/${orderId}/advance`, { token: driver.token })
+  await request('POST', `/api/orders/${orderId}/confirm-delivery`, { token: customer.token })
 
   await request('POST', `/api/orders/${orderId}/rate`, { token: customer.token, body: { rating: 5 } })
   await request('POST', `/api/orders/${orderId}/rate-customer`, { token: driver.token, body: { rating: 2 } })

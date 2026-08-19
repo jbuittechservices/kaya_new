@@ -43,9 +43,35 @@ export function AppDataProvider({ children }) {
     setSavedLocations(locations)
   }, [])
 
-  const ACTIVE_STATUSES = ['searching', 'enroute', 'arrived', 'in_transit']
+  // 'delivered' is included here too — the driver marked it dropped off, but the
+  // customer still needs the live screen to confirm delivery and pay, so it's not done yet.
+  const ACTIVE_STATUSES = ['searching', 'enroute', 'arrived', 'in_transit', 'delivered']
 
   const [reconciledOrderId, setReconciledOrderId] = useState(null)
+
+  const resumeTracking = useCallback(async (orderId) => {
+    const { order, rider } = await api.get(`/api/orders/${orderId}`)
+    const { conversations: convos } = await api.get('/api/messages').catch(() => ({ conversations: [] }))
+    const conversationId = convos.find((c) => c.orderId === order.id)?.id
+
+    setDraft({
+      phase: order.status === 'searching' ? 'searching' : order.status,
+      orderId: order.id,
+      order,
+      rider,
+      conversationId,
+      pickup: order.pickup,
+      dropoff: order.dropoff,
+      pickupLat: order.pickupLat,
+      pickupLng: order.pickupLng,
+      dropoffLat: order.dropoffLat,
+      dropoffLng: order.dropoffLng,
+      category: order.category,
+      vehicle: order.vehicle,
+      paymentMethod: order.paymentMethod,
+    })
+    return order
+  }, [])
 
   useEffect(() => {
     if (!isAuthenticated || user?.role !== 'customer') return
@@ -56,32 +82,10 @@ export function AppDataProvider({ children }) {
         if (cancelled || draftRef.current) return // don't clobber an already-active in-memory booking
         const active = orders.find((o) => ACTIVE_STATUSES.includes(o.status))
         if (!active) return
-
         // Rebuild the tracking screen from the server so a refreshed/reopened tab during
         // an active delivery resumes live tracking instead of silently losing it.
-        const { order, rider } = await api.get(`/api/orders/${active.id}`)
-        if (cancelled) return
-
-        const { conversations: convos } = await api.get('/api/messages').catch(() => ({ conversations: [] }))
-        const conversationId = convos.find((c) => c.orderId === order.id)?.id
-
-        setDraft({
-          phase: order.status === 'searching' ? 'searching' : order.status,
-          orderId: order.id,
-          order,
-          rider,
-          conversationId,
-          pickup: order.pickup,
-          dropoff: order.dropoff,
-          pickupLat: order.pickupLat,
-          pickupLng: order.pickupLng,
-          dropoffLat: order.dropoffLat,
-          dropoffLng: order.dropoffLng,
-          category: order.category,
-          vehicle: order.vehicle,
-          paymentMethod: order.paymentMethod,
-        })
-        setReconciledOrderId(order.id)
+        const order = await resumeTracking(active.id)
+        if (!cancelled) setReconciledOrderId(order.id)
       })
       .catch(() => {})
 
@@ -116,6 +120,13 @@ export function AppDataProvider({ children }) {
           return { ...d, phase: order.status, order }
         }
         if (order.status === 'delivered') {
+          // Driver says it's dropped off — nothing has been paid yet, this just asks
+          // the customer to confirm before money moves.
+          return { ...d, phase: 'delivered', order }
+        }
+        if (order.status === 'completed') {
+          // Customer's own confirmation is what actually settles payment — refresh
+          // wallet/orders now, not before, since this is when the balance actually changed.
           refreshOrders().catch(() => {})
           refreshWallet().catch(() => {})
           return { ...d, phase: 'completed', order }
@@ -229,6 +240,14 @@ export function AppDataProvider({ children }) {
     setDraft((d) => (d ? { ...d, phase: 'enroute' } : d))
   }
 
+  async function confirmDelivery(orderId) {
+    const { order } = await api.post(`/api/orders/${orderId}/confirm-delivery`)
+    setDraft((d) => (d && d.orderId === order.id ? { ...d, phase: 'completed', order } : d))
+    refreshOrders().catch(() => {})
+    refreshWallet().catch(() => {})
+    return order
+  }
+
   async function cancelDraft() {
     const d = draftRef.current
     if (d?.orderId && ['searching', 'found'].includes(d.phase)) {
@@ -285,6 +304,8 @@ export function AppDataProvider({ children }) {
     updateDraft,
     requestRider,
     acceptFoundRider,
+    confirmDelivery,
+    resumeTracking,
     cancelDraft,
     rateOrder,
     topUpWallet,

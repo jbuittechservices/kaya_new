@@ -1,5 +1,5 @@
 import { NavLink, Navigate, Outlet, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, Bike, Package, Receipt, LogOut } from 'lucide-react'
+import { LayoutDashboard, Users, Bike, Package, Receipt, Settings, LogOut } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { Avatar } from '../../components/ui/Misc'
 import Logo from '../../components/ui/Logo'
@@ -10,6 +10,7 @@ const LINKS = [
   { to: '/admin/drivers', label: 'Riders', icon: Bike },
   { to: '/admin/orders', label: 'Orders', icon: Package },
   { to: '/admin/transactions', label: 'Transactions', icon: Receipt },
+  { to: '/admin/settings', label: 'Settings', icon: Settings },
 ]
 
 export default function AdminShell() {
@@ -20,7 +21,7 @@ export default function AdminShell() {
   if (!isAuthenticated || user?.role !== 'admin') return <Navigate to="/admin/login" replace />
 
   return (
-    <div className="flex min-h-screen bg-cream-100">
+    <div className="flex min-h-screen flex-col bg-cream-100 md:flex-row">
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col border-r border-navy-900/8 bg-white px-5 py-6 md:flex">
         <div className="mb-8 px-1">
           <Logo variant="dark" height={24} />
@@ -64,6 +65,32 @@ export default function AdminShell() {
           </button>
         </div>
       </aside>
+
+      {/* Mobile: the sidebar above is hidden entirely below md — without this, an admin
+          on a phone would have no way to navigate between sections at all. */}
+      <div className="sticky top-0 z-30 flex items-center justify-between border-b border-navy-900/8 bg-white px-4 py-3 md:hidden">
+        <Logo variant="dark" height={20} />
+        <button onClick={logout} className="tap flex h-9 w-9 items-center justify-center rounded-full bg-navy-900/5">
+          <LogOut size={15} className="text-danger" />
+        </button>
+      </div>
+      <nav className="sticky top-[52px] z-30 flex gap-2 overflow-x-auto border-b border-navy-900/8 bg-white px-4 py-2 no-scrollbar md:hidden">
+        {LINKS.map((link) => (
+          <NavLink
+            key={link.to}
+            to={link.to}
+            end={link.end}
+            className={({ isActive }) =>
+              `tap flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-semibold ${
+                isActive ? 'bg-navy-900 text-white' : 'bg-navy-900/5 text-navy-900/60'
+              }`
+            }
+          >
+            <link.icon size={15} />
+            {link.label}
+          </NavLink>
+        ))}
+      </nav>
 
       <div className="flex-1 px-5 py-6 md:px-10 md:py-8">
         <Outlet />

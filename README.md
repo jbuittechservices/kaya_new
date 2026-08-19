@@ -123,7 +123,7 @@ skips accounts that already exist).
 - Real Google Maps throughout (address autocomplete, live route + markers, real-time rider
   position) — falls back to an illustrated placeholder map when no API key is configured
 - Real Kaya brand (logo, `#00ABFD` blue / white / black) applied throughout both apps
-- **30 automated regression tests** (`npm test` in `server/`) covering every bug found during
+- **34 automated regression tests** (`npm test` in `server/`) covering every bug found during
   hardening — see "Automated tests" below
 
 ## Environment variables
@@ -158,7 +158,7 @@ cd server
 npm test
 ```
 
-30 tests, all exercising the real Express app over real HTTP against a fresh throwaway SQLite
+34 tests, all exercising the real Express app over real HTTP against a fresh throwaway SQLite
 database (spun up and torn down per run) — not mocks, including real signups driven through the
 actual phone → OTP → account flow (the test harness captures the dev-mode OTP codes straight
 from server output). They cover the exact bugs found during hardening, so they act as regression
@@ -357,6 +357,33 @@ to production noted in code comments, are:
 
 This app went through several rounds of a genuine audit (not just a read-through — every item
 below was reproduced against the live running server before being fixed, and re-verified after):
+
+- **Delivery confirmation & payment**: a driver marking a delivery "delivered" used to settle
+  payment immediately and unlock rating — with zero input from the customer. Restructured so
+  "delivered" (driver's declaration) and "completed" (customer's confirmation) are distinct
+  states; only the customer's explicit confirmation actually moves money and unlocks rating in
+  both directions. Verified live: balance is provably unchanged right after the driver marks
+  delivered, and only debits/credits correctly (with the 85/15 split) once the customer confirms.
+- **Admin-configurable pricing**: per-vehicle-type prices were a hardcoded constant; now stored
+  in the database with sane defaults, editable from a new Admin → Settings page, and live orders
+  immediately pick up the new price.
+- **Document viewer**: "View documents" in the admin panel silently did nothing for most people —
+  `window.open()` was being called after an `await fetch()`, which browsers commonly block since
+  it's no longer a direct result of the click. Replaced with a real in-app viewer modal.
+- **Address autocomplete dropdown clipping**: an ancestor card's `overflow-hidden` (for rounded
+  corners) was silently clipping the suggestion dropdown regardless of its own z-index. Rebuilt
+  to render through a portal directly into the page body, immune to any ancestor's styling.
+- **Full-screen map**: "View map in full mode" was decorative text with no click handler. Real
+  interactive fullscreen map (pan, zoom, everything) now built into the map component itself.
+- **Losing an active delivery**: both the customer and driver sides now rebuild their in-progress
+  delivery from the server on load — a page refresh, or navigating to chat and back, no longer
+  loses live tracking or the ability to keep advancing/confirming a delivery.
+- **Desktop layout**: an incoming-request overlay centered itself on the *entire browser
+  viewport* rather than the visible content area, which is offset by a 256px sidebar on desktop —
+  fixed. The admin panel also had zero navigation at all on mobile (sidebar was hidden below the
+  desktop breakpoint with nothing replacing it) — added a proper mobile nav strip.
+
+Earlier rounds of hardening (still true, not superseded):
 
 - **Driver verification gating**: a driver can no longer receive, see, or accept deliveries until
   an admin has approved their submitted documents and guarantor details (all three onboarding

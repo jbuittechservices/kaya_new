@@ -35,6 +35,7 @@ const AdminUsers = lazy(() => import('./pages/admin/AdminUsers'))
 const AdminDrivers = lazy(() => import('./pages/admin/AdminDrivers'))
 const AdminOrders = lazy(() => import('./pages/admin/AdminOrders'))
 const AdminTransactions = lazy(() => import('./pages/admin/AdminTransactions'))
+const AdminSettings = lazy(() => import('./pages/admin/AdminSettings'))
 
 function RouteLoading() {
   return (
@@ -88,6 +89,7 @@ function AppRoutes() {
           <Route path="drivers" element={<AdminDrivers />} />
           <Route path="orders" element={<AdminOrders />} />
           <Route path="transactions" element={<AdminTransactions />} />
+          <Route path="settings" element={<AdminSettings />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

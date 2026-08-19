@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { MapPin, Phone, MessageCircle, CheckCircle2, PartyPopper, Star } from 'lucide-react'
+import { MapPin, Phone, MessageCircle, CheckCircle2, PartyPopper, Star, Wallet, Banknote } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAppData } from '../../context/AppDataContext'
 import { BackHeader, Avatar } from '../../components/ui/Misc'
@@ -15,7 +15,7 @@ const PHASE_COPY = {
 }
 
 export default function TrackingFlow({ onDone }) {
-  const { draft, cancelDraft, acceptFoundRider, rateOrder } = useAppData()
+  const { draft, cancelDraft, acceptFoundRider, rateOrder, confirmDelivery } = useAppData()
   const navigate = useNavigate()
   const { phase } = draft
 
@@ -25,17 +25,18 @@ export default function TrackingFlow({ onDone }) {
         title={
           phase === 'searching' ? 'Finding a rider' :
           phase === 'found' ? 'Rider found' :
+          phase === 'delivered' ? 'Confirm delivery' :
           phase === 'completed' || phase === 'rated' ? 'Delivery complete' :
           'Track delivery'
         }
-        onBack={phase === 'completed' || phase === 'rated' ? onDone : cancelDraft}
+        onBack={phase === 'delivered' || phase === 'completed' || phase === 'rated' ? onDone : cancelDraft}
       />
 
       <LiveMap
         pickup={{ lat: draft.pickupLat, lng: draft.pickupLng }}
         dropoff={{ lat: draft.dropoffLat, lng: draft.dropoffLng }}
         liveMarker={draft.riderLat != null ? { lat: draft.riderLat, lng: draft.riderLng } : null}
-        progress={phase === 'enroute' ? 0.33 : phase === 'arrived' ? 0.66 : phase === 'in_transit' ? 0.9 : null}
+        progress={phase === 'enroute' ? 0.33 : phase === 'arrived' ? 0.66 : phase === 'in_transit' ? 0.9 : phase === 'delivered' ? 1 : null}
         className="mx-5 h-56 rounded-3xl"
       >
         {phase === 'searching' && (
@@ -54,6 +55,7 @@ export default function TrackingFlow({ onDone }) {
         {phase === 'searching' && <SearchingPanel />}
         {phase === 'found' && <FoundPanel draft={draft} onAccept={acceptFoundRider} onCancel={cancelDraft} />}
         {(phase === 'enroute' || phase === 'arrived' || phase === 'in_transit') && <LivePanel draft={draft} phase={phase} navigate={navigate} />}
+        {phase === 'delivered' && <ConfirmDeliveryPanel draft={draft} onConfirm={confirmDelivery} />}
         {phase === 'completed' && <CompletedPanel draft={draft} onSkip={onDone} rateOrder={rateOrder} />}
         {phase === 'rated' && <ThankYouPanel onDone={onDone} />}
       </div>
@@ -156,6 +158,56 @@ function LivePanel({ draft, phase, navigate }) {
           <span className="text-slate-muted">Destination</span>
           <span className="max-w-[60%] truncate font-semibold text-navy-950">{draft.dropoff || 'Destination'}</span>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function ConfirmDeliveryPanel({ draft, onConfirm }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const order = draft.order
+  const rider = draft.rider
+  const isOnline = order?.paymentMethod === 'online' || order?.paymentMethod === 'wallet'
+
+  async function handleConfirm() {
+    setBusy(true)
+    setError(null)
+    try {
+      await onConfirm(order.id)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="animate-slide-up space-y-4">
+      <div className="rounded-3xl bg-white p-6 text-center shadow-[var(--shadow-card)]">
+        <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100">
+          <CheckCircle2 size={26} className="text-amber-600" />
+        </div>
+        <h2 className="text-lg font-bold text-navy-950">{rider?.name || 'Your rider'} says it's delivered</h2>
+        <p className="mt-1 text-sm text-slate-muted">Confirm you've received your package to complete the order.</p>
+      </div>
+
+      <div className="rounded-3xl bg-white p-5 shadow-[var(--shadow-card)]">
+        <div className="flex items-center gap-3 rounded-2xl bg-navy-900/5 p-4">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white">
+            {isOnline ? <Wallet size={20} className="text-navy-900" /> : <Banknote size={20} className="text-navy-900" />}
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-navy-950">{formatNaira(order?.price)}</p>
+            <p className="text-xs text-slate-muted">
+              {isOnline ? "Deducted from your wallet the moment you confirm" : `Pay ${rider?.name?.split(' ')[0] || 'your rider'} in cash`}
+            </p>
+          </div>
+        </div>
+        {error && <p className="mt-3 text-sm font-medium text-danger">{error}</p>}
+        <Button full className="mt-4" disabled={busy} onClick={handleConfirm}>
+          {busy ? 'Confirming…' : "Confirm I've received it"}
+        </Button>
       </div>
     </div>
   )

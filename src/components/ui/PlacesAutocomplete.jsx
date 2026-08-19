@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { MapPin, Loader2 } from 'lucide-react'
 import { hasGoogleMaps, useGoogleMaps } from '../../lib/googleMaps'
 
@@ -12,6 +13,12 @@ let placesServiceDiv = null // shared dummy element PlacesService requires; neve
  * which looks broken next to the rest of the app. This renders real React elements
  * we can theme, animate, and keyboard-navigate like everything else in the app.
  *
+ * The dropdown itself is rendered through a portal directly into document.body,
+ * positioned by the input's own bounding box. Any ancestor between this input and
+ * the page root that has `overflow: hidden` (rounded cards, scroll containers,
+ * anything) would otherwise silently clip an absolutely-positioned dropdown even
+ * though its own z-index looks correct — a portal sidesteps that entirely.
+ *
  * Falls back to a plain input when no API key is configured, so the booking flow
  * still works end to end in local development.
  */
@@ -20,12 +27,14 @@ export default function PlacesAutocompleteInput({ value, onChange, onSelect, pla
   const autocompleteServiceRef = useRef(null)
   const sessionTokenRef = useRef(null)
   const containerRef = useRef(null)
+  const inputRef = useRef(null)
   const debounceRef = useRef(null)
 
   const [predictions, setPredictions] = useState([])
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [highlighted, setHighlighted] = useState(-1)
+  const [rect, setRect] = useState(null)
 
   useEffect(() => {
     if (!isLoaded || !window.google) return
@@ -33,10 +42,29 @@ export default function PlacesAutocompleteInput({ value, onChange, onSelect, pla
     sessionTokenRef.current = new window.google.maps.places.AutocompleteSessionToken()
   }, [isLoaded])
 
-  // Close on outside click
+  // Keep the portal's position glued to the input — recompute on open, and on any
+  // scroll/resize anywhere on the page while it's open (position: fixed doesn't
+  // auto-follow scrolling containers the input might be inside).
+  useEffect(() => {
+    if (!open) return
+    function updateRect() {
+      if (inputRef.current) setRect(inputRef.current.getBoundingClientRect())
+    }
+    updateRect()
+    window.addEventListener('scroll', updateRect, true)
+    window.addEventListener('resize', updateRect)
+    return () => {
+      window.removeEventListener('scroll', updateRect, true)
+      window.removeEventListener('resize', updateRect)
+    }
+  }, [open])
+
+  // Close on outside click (checks both the input and the portalled dropdown)
   useEffect(() => {
     function handleClick(e) {
-      if (containerRef.current && !containerRef.current.contains(e.target)) setOpen(false)
+      if (containerRef.current?.contains(e.target)) return
+      if (e.target.closest?.('[data-places-dropdown]')) return
+      setOpen(false)
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
@@ -124,9 +152,12 @@ export default function PlacesAutocompleteInput({ value, onChange, onSelect, pla
     return <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={baseInputClass} />
   }
 
+  const showDropdown = open && (loading || predictions.length > 0) && rect
+
   return (
-    <div ref={containerRef} className="relative w-full flex-1">
+    <div ref={containerRef} className="w-full flex-1">
       <input
+        ref={inputRef}
         value={value}
         onChange={handleChange}
         onFocus={() => predictions.length > 0 && setOpen(true)}
@@ -139,52 +170,56 @@ export default function PlacesAutocompleteInput({ value, onChange, onSelect, pla
         aria-autocomplete="list"
       />
 
-      {open && (loading || predictions.length > 0) && (
-        <div
-          className={`animate-slide-up absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border shadow-xl ${
-            dark ? 'border-white/10 bg-navy-800' : 'border-navy-900/10 bg-white'
-          }`}
-        >
-          {loading && predictions.length === 0 && (
-            <div className={`flex items-center gap-2 px-4 py-3 text-sm ${dark ? 'text-white/50' : 'text-slate-muted'}`}>
-              <Loader2 size={14} className="animate-spin" /> Searching…
-            </div>
-          )}
+      {showDropdown &&
+        createPortal(
+          <div
+            data-places-dropdown
+            style={{ position: 'fixed', top: rect.bottom + 8, left: rect.left, width: rect.width }}
+            className={`animate-slide-up z-[100] overflow-hidden rounded-2xl border shadow-xl ${
+              dark ? 'border-white/10 bg-navy-800' : 'border-navy-900/10 bg-white'
+            }`}
+          >
+            {loading && predictions.length === 0 && (
+              <div className={`flex items-center gap-2 px-4 py-3 text-sm ${dark ? 'text-white/50' : 'text-slate-muted'}`}>
+                <Loader2 size={14} className="animate-spin" /> Searching…
+              </div>
+            )}
 
-          <ul className="max-h-64 overflow-y-auto py-1">
-            {predictions.map((p, i) => (
-              <li key={p.place_id}>
-                <button
-                  type="button"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => selectPrediction(p)}
-                  onMouseEnter={() => setHighlighted(i)}
-                  className={`flex w-full items-start gap-2.5 px-4 py-2.5 text-left transition-colors ${
-                    i === highlighted ? (dark ? 'bg-white/10' : 'bg-amber-100/60') : ''
-                  }`}
-                >
-                  <MapPin size={15} className={`mt-0.5 shrink-0 ${dark ? 'text-white/40' : 'text-navy-900/35'}`} />
-                  <span className="min-w-0">
-                    <span className={`block truncate text-sm font-semibold ${dark ? 'text-white' : 'text-navy-950'}`}>
-                      {p.structured_formatting?.main_text || p.description}
-                    </span>
-                    {p.structured_formatting?.secondary_text && (
-                      <span className={`block truncate text-xs ${dark ? 'text-white/45' : 'text-slate-muted'}`}>
-                        {p.structured_formatting.secondary_text}
+            <ul className="max-h-64 overflow-y-auto py-1">
+              {predictions.map((p, i) => (
+                <li key={p.place_id}>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => selectPrediction(p)}
+                    onMouseEnter={() => setHighlighted(i)}
+                    className={`flex w-full items-start gap-2.5 px-4 py-2.5 text-left transition-colors ${
+                      i === highlighted ? (dark ? 'bg-white/10' : 'bg-amber-100/60') : ''
+                    }`}
+                  >
+                    <MapPin size={15} className={`mt-0.5 shrink-0 ${dark ? 'text-white/40' : 'text-navy-900/35'}`} />
+                    <span className="min-w-0">
+                      <span className={`block truncate text-sm font-semibold ${dark ? 'text-white' : 'text-navy-950'}`}>
+                        {p.structured_formatting?.main_text || p.description}
                       </span>
-                    )}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+                      {p.structured_formatting?.secondary_text && (
+                        <span className={`block truncate text-xs ${dark ? 'text-white/45' : 'text-slate-muted'}`}>
+                          {p.structured_formatting.secondary_text}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
 
-          {/* Required attribution when Place predictions are shown without a persistently visible Google Map */}
-          <div className={`border-t px-4 py-2 text-right text-[11px] font-medium ${dark ? 'border-white/10 text-white/30' : 'border-navy-900/8 text-navy-900/30'}`}>
-            Powered by Google
-          </div>
-        </div>
-      )}
+            {/* Required attribution when Place predictions are shown without a persistently visible Google Map */}
+            <div className={`border-t px-4 py-2 text-right text-[11px] font-medium ${dark ? 'border-white/10 text-white/30' : 'border-navy-900/8 text-navy-900/30'}`}>
+              Powered by Google
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   )
 }

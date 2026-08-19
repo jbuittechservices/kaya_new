@@ -21,6 +21,7 @@ const STAGE_LABEL = {
   enroute: { title: 'Head to pickup point', cta: 'Confirm pickup' },
   arrived: { title: 'At pickup — collect the package', cta: 'Start delivery' },
   in_transit: { title: 'Delivering to customer', cta: 'Mark as delivered' },
+  delivered: { title: 'Waiting for the customer to confirm delivery', cta: null },
 }
 
 export default function DriverHome() {
@@ -97,14 +98,55 @@ export default function DriverHome() {
     function onTaken({ orderId }) {
       setQueue((q) => q.filter((o) => o.id !== orderId))
     }
+    // The customer confirming delivery is what actually settles payment — this is how
+    // the driver finds out, whether or not this tab is the one that marked it delivered
+    // (e.g. after navigating away to chat and back).
+    function onOrderUpdate({ order }) {
+      setActive((a) => {
+        if (!a || a.id !== order.id) return a
+        if (order.status === 'completed') {
+          setRateCustomerOrder({ ...order, customer: a.customer })
+          api.get('/api/drivers/earnings').then(setEarnings).catch(() => {})
+          refreshUser()
+          return null
+        }
+        return { ...a, ...order }
+      })
+    }
 
     socket.on('order:incoming', onIncoming)
     socket.on('order:taken', onTaken)
+    socket.on('order:update', onOrderUpdate)
     return () => {
       socket.off('order:incoming', onIncoming)
       socket.off('order:taken', onTaken)
+      socket.off('order:update', onOrderUpdate)
     }
-  }, [socket])
+  }, [socket, refreshUser])
+
+  // Rebuild the active delivery from the server on load — a page refresh, or navigating
+  // away to chat and back, previously lost this entirely since it only ever lived in
+  // local component state.
+  useEffect(() => {
+    let cancelled = false
+    api
+      .get('/api/orders')
+      .then(async (res) => {
+        if (cancelled) return
+        const activeOrder = res.orders.find((o) => ['enroute', 'arrived', 'in_transit', 'delivered'].includes(o.status))
+        if (!activeOrder) return
+        const { order, customer } = await api.get(`/api/orders/${activeOrder.id}`)
+        if (cancelled) return
+        const { conversations } = await api.get('/api/messages').catch(() => ({ conversations: [] }))
+        const conversationId = conversations.find((c) => c.orderId === order.id)?.id
+        setActive({ ...order, customer, conversationId })
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Report real device location to the customer while a delivery is active
   useEffect(() => {
@@ -163,14 +205,7 @@ export default function DriverHome() {
     setBusy(true)
     try {
       const { order } = await api.post(`/api/orders/${active.id}/advance`)
-      if (order.status === 'delivered') {
-        setRateCustomerOrder({ ...order, customer: active.customer })
-        setActive(null)
-        api.get('/api/drivers/earnings').then(setEarnings).catch(() => {})
-        refreshUser()
-      } else {
-        setActive((a) => ({ ...a, ...order }))
-      }
+      setActive((a) => ({ ...a, ...order }))
     } catch (err) {
       alert(err.message)
     } finally {
@@ -275,7 +310,7 @@ export default function DriverHome() {
       )}
 
       {incoming && !active && (
-        <div className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-md animate-slide-up rounded-t-3xl bg-white p-5 shadow-2xl safe-bottom">
+        <div className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-md md:inset-x-auto md:left-64 md:right-0 animate-slide-up rounded-t-3xl bg-white p-5 shadow-2xl safe-bottom">
           <p className="text-center text-xs font-bold uppercase tracking-wide text-amber-600">New delivery request</p>
           <div className="mt-3 flex items-center justify-between">
             <div>
@@ -343,9 +378,15 @@ export default function DriverHome() {
               <span className="text-slate-muted">Fare</span>
               <span className="font-semibold text-navy-950">{formatNaira(active.price)}</span>
             </div>
-            <Button full className="mt-4" onClick={advance} disabled={busy}>
-              {busy ? 'Updating…' : STAGE_LABEL[active.status]?.cta}
-            </Button>
+            {STAGE_LABEL[active.status]?.cta ? (
+              <Button full className="mt-4" onClick={advance} disabled={busy}>
+                {busy ? 'Updating…' : STAGE_LABEL[active.status]?.cta}
+              </Button>
+            ) : (
+              <div className="mt-4 flex items-center justify-center gap-2 rounded-2xl bg-navy-900/5 py-3 text-sm font-semibold text-navy-900/60">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" /> Waiting for customer to confirm…
+              </div>
+            )}
           </Card>
         </div>
       )}
@@ -360,7 +401,7 @@ function RateCustomerSheet({ order, busy, onSubmit, onSkip }) {
   const [comment, setComment] = useState('')
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-md animate-slide-up rounded-t-3xl bg-white p-5 shadow-2xl safe-bottom">
+    <div className="fixed inset-x-0 bottom-0 z-50 mx-auto max-w-md md:inset-x-auto md:left-64 md:right-0 animate-slide-up rounded-t-3xl bg-white p-5 shadow-2xl safe-bottom">
       <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-success/10">
         <CheckCircle2 size={26} className="text-success" />
       </div>

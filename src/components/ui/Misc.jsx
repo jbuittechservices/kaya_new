@@ -12,7 +12,8 @@ export function Card({ className = '', children, ...props }) {
 }
 
 const STATUS_STYLE = {
-  delivered: 'bg-success/10 text-success',
+  completed: 'bg-success/10 text-success',
+  delivered: 'bg-amber-500/15 text-amber-600',
   in_transit: 'bg-amber-500/15 text-amber-600',
   enroute: 'bg-amber-500/15 text-amber-600',
   arrived: 'bg-amber-500/15 text-amber-600',
@@ -22,7 +23,8 @@ const STATUS_STYLE = {
 }
 
 const STATUS_LABEL = {
-  delivered: 'Delivered',
+  completed: 'Delivered',
+  delivered: 'Awaiting your confirmation',
   in_transit: 'In transit',
   enroute: 'Rider en route',
   arrived: 'Rider arrived',

@@ -31,6 +31,25 @@ async function createAndDeliverOrder({ vehicle = 'bike', paymentMethod = 'cash' 
   return orderId
 }
 
+// The driver marking something 'delivered' no longer settles payment by itself — the
+// customer's own confirmation is what actually moves money and unlocks rating. Most
+// tests want the fully-settled end state, so this wraps both steps together.
+async function createDeliverAndConfirmOrder(opts) {
+  const orderId = await createAndDeliverOrder(opts)
+  const confirmed = await request('POST', `/api/orders/${orderId}/confirm-delivery`, { token: customer.token })
+  assert.equal(confirmed.status, 200)
+  assert.equal(confirmed.body.order.status, 'completed')
+  return orderId
+}
+
+// Several tests below need a guaranteed amount of wallet balance for an online-payment
+// order — rather than assume the shared test account happens to have enough left over
+// from whatever ran before it (fragile and order-dependent), top it up explicitly.
+async function topUpCustomer(amount) {
+  const res = await request('POST', '/api/wallet/topup/initialize', { token: customer.token, body: { amount } })
+  assert.equal(res.status, 200)
+}
+
 test('order lifecycle: create, accept, advance through to delivered', async () => {
   const orderId = await createAndDeliverOrder()
   const { status, body } = await request('GET', `/api/orders/${orderId}`, { token: customer.token })
@@ -61,7 +80,7 @@ test('REGRESSION: wallet balance can never go negative, even when settlement wou
 
   // Spend down with bike deliveries (₦1200 each) until less than one more fits
   while (remaining >= 1200) {
-    await createAndDeliverOrder({ vehicle: 'bike', paymentMethod: 'online' })
+    await createDeliverAndConfirmOrder({ vehicle: 'bike', paymentMethod: 'online' })
     const w = await request('GET', '/api/wallet', { token: customer.token })
     remaining = w.body.balance
   }
@@ -71,7 +90,7 @@ test('REGRESSION: wallet balance can never go negative, even when settlement wou
 })
 
 test('REGRESSION: rating must be an integer 1-5, out-of-range values are rejected', async () => {
-  const orderId = await createAndDeliverOrder()
+  const orderId = await createDeliverAndConfirmOrder()
 
   const tooHigh = await request('POST', `/api/orders/${orderId}/rate`, { token: customer.token, body: { rating: 999 } })
   assert.equal(tooHigh.status, 400)
@@ -88,7 +107,7 @@ test('REGRESSION: rating must be an integer 1-5, out-of-range values are rejecte
 })
 
 test('REGRESSION: an order can only be rated once', async () => {
-  const orderId = await createAndDeliverOrder()
+  const orderId = await createDeliverAndConfirmOrder()
   const first = await request('POST', `/api/orders/${orderId}/rate`, { token: customer.token, body: { rating: 4 } })
   assert.equal(first.status, 200)
 
@@ -108,4 +127,63 @@ test('a driver cannot accept an order that is already taken', async () => {
 
   const second = await request('POST', `/api/orders/${orderId}/accept`, { token: driver.token })
   assert.equal(second.status, 409)
+})
+
+test('REGRESSION: a driver marking something delivered does NOT move any money by itself', async () => {
+  await topUpCustomer(5000)
+  const walletBefore = await request('GET', '/api/wallet', { token: customer.token })
+  const orderId = await createAndDeliverOrder({ paymentMethod: 'online' })
+  const walletAfter = await request('GET', '/api/wallet', { token: customer.token })
+  assert.equal(walletAfter.body.balance, walletBefore.body.balance, "balance must not change until the customer confirms")
+
+  const { body } = await request('GET', `/api/orders/${orderId}`, { token: customer.token })
+  assert.equal(body.order.status, 'delivered')
+})
+
+test('REGRESSION: only the customer can confirm their own delivery', async () => {
+  const orderId = await createAndDeliverOrder()
+
+  const byDriver = await request('POST', `/api/orders/${orderId}/confirm-delivery`, { token: driver.token })
+  assert.equal(byDriver.status, 403)
+
+  const byCustomer = await request('POST', `/api/orders/${orderId}/confirm-delivery`, { token: customer.token })
+  assert.equal(byCustomer.status, 200)
+})
+
+test('REGRESSION: confirming delivery is what actually settles payment', async () => {
+  await topUpCustomer(5000)
+  const walletBefore = await request('GET', '/api/wallet', { token: customer.token })
+  const driverWalletBefore = await request('GET', '/api/wallet', { token: driver.token })
+
+  const orderId = await createAndDeliverOrder({ vehicle: 'bike', paymentMethod: 'online' })
+  const confirm = await request('POST', `/api/orders/${orderId}/confirm-delivery`, { token: customer.token })
+  assert.equal(confirm.status, 200)
+  assert.equal(confirm.body.order.status, 'completed')
+
+  const walletAfter = await request('GET', '/api/wallet', { token: customer.token })
+  const driverWalletAfter = await request('GET', '/api/wallet', { token: driver.token })
+  assert.equal(walletAfter.body.balance, walletBefore.body.balance - 1200)
+  assert.equal(driverWalletAfter.body.balance, driverWalletBefore.body.balance + Math.round(1200 * 0.85))
+})
+
+test('a delivery cannot be confirmed before the driver has marked it delivered, or twice after', async () => {
+  const created = await request('POST', '/api/orders', {
+    token: customer.token,
+    body: { pickup: 'A', dropoff: 'B', category: 'parcel', vehicle: 'bike', paymentMethod: 'cash' },
+  })
+  const orderId = created.body.order.id
+  await request('POST', `/api/orders/${orderId}/accept`, { token: driver.token })
+
+  const tooEarly = await request('POST', `/api/orders/${orderId}/confirm-delivery`, { token: customer.token })
+  assert.equal(tooEarly.status, 409)
+
+  await request('POST', `/api/orders/${orderId}/advance`, { token: driver.token })
+  await request('POST', `/api/orders/${orderId}/advance`, { token: driver.token })
+  await request('POST', `/api/orders/${orderId}/advance`, { token: driver.token })
+
+  const first = await request('POST', `/api/orders/${orderId}/confirm-delivery`, { token: customer.token })
+  assert.equal(first.status, 200)
+
+  const twice = await request('POST', `/api/orders/${orderId}/confirm-delivery`, { token: customer.token })
+  assert.equal(twice.status, 409)
 })

@@ -12,22 +12,36 @@ import { CATEGORY_ICONS } from '../../lib/icons'
 
 export default function OrderDetails() {
   const { id } = useParams()
-  const { startDraft } = useAppData()
+  const { startDraft, resumeTracking } = useAppData()
   const navigate = useNavigate()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+
+  const ACTIVE_STATUSES = ['searching', 'enroute', 'arrived', 'in_transit', 'delivered']
 
   useEffect(() => {
     let alive = true
     setLoading(true)
     api
       .get(`/api/orders/${id}`)
-      .then((res) => alive && setData(res))
+      .then(async (res) => {
+        if (!alive) return
+        if (ACTIVE_STATUSES.includes(res.order.status)) {
+          // Still in progress — resume live tracking instead of showing the static
+          // "completed order" view with a "book again" button, which made no sense
+          // for a delivery that's literally still happening right now.
+          await resumeTracking(res.order.id)
+          if (alive) navigate('/app/booking', { replace: true })
+          return
+        }
+        setData(res)
+      })
       .catch(() => alive && setData(null))
       .finally(() => alive && setLoading(false))
     return () => {
       alive = false
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   if (loading) {

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Plus, Minus, Banknote, CreditCard, Navigation } from 'lucide-react'
+import { Plus, Minus, Banknote, CreditCard } from 'lucide-react'
 import { useAppData } from '../../context/AppDataContext'
 import { BackHeader } from '../../components/ui/Misc'
 import LiveMap from '../../components/ui/LiveMap'
@@ -23,11 +23,7 @@ export default function DeliveryDetailsStep() {
         pickup={{ lat: draft.pickupLat, lng: draft.pickupLng }}
         dropoff={{ lat: draft.dropoffLat, lng: draft.dropoffLng }}
         className="mx-5 h-40 rounded-3xl"
-      >
-        <span className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full bg-navy-950/85 px-3 py-1.5 text-xs font-semibold text-white">
-          <Navigation size={13} /> View map in full mode
-        </span>
-      </LiveMap>
+      />
 
       <div className="mt-5 space-y-4 px-5">
         <div className="rounded-3xl bg-white p-4 shadow-[var(--shadow-card)]">

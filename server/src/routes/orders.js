@@ -5,17 +5,13 @@ import { serializeOrder } from '../utils/serialize.js'
 import * as bus from '../sockets/bus.js'
 import { sendPushToUser, sendPushToActiveDrivers } from '../utils/push.js'
 import { isDriverVerified } from '../utils/driverVerification.js'
+import { priceFor } from '../utils/pricing.js'
 
 const router = Router()
 router.use(requireAuth)
 
-const VEHICLE_PRICES = { bike: 1200, car: 2400, van: 5600 }
 const PLATFORM_FEE_PCT = 0.15
 const STATUS_FLOW = ['enroute', 'arrived', 'in_transit', 'delivered']
-
-function priceFor(vehicle) {
-  return VEHICLE_PRICES[vehicle] ?? VEHICLE_PRICES.bike
-}
 
 // Create a delivery request
 router.post('/', (req, res) => {
@@ -147,6 +143,10 @@ router.post('/:id/accept', requireRole('driver'), (req, res) => {
 })
 
 // Advance status: enroute -> arrived -> in_transit -> delivered
+// Note: reaching 'delivered' here means the driver has dropped the package off — it does
+// NOT move money yet. Settlement only happens once the customer explicitly confirms via
+// POST /:id/confirm-delivery below, so a driver can't unilaterally trigger a payout by
+// just tapping through the stages.
 router.post('/:id/advance', requireRole('driver'), (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)
   if (!order) return res.status(404).json({ error: 'Order not found' })
@@ -160,17 +160,13 @@ router.post('/:id/advance', requireRole('driver'), (req, res) => {
 
   db.prepare(`UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?`).run(nextStatus, order.id)
 
-  if (nextStatus === 'delivered') {
-    settleOrder(order)
-  }
-
   const updated = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id)
   bus.emitToUser(order.customer_id, 'order:update', { order: serializeOrder(updated) })
 
   const STATUS_PUSH_COPY = {
     arrived: 'Your rider has arrived at the pickup point',
     in_transit: 'Your package is on its way',
-    delivered: 'Delivered! Tap to rate your rider',
+    delivered: 'Your rider says it has been delivered — tap to confirm and pay',
   }
   if (STATUS_PUSH_COPY[nextStatus]) {
     sendPushToUser(order.customer_id, {
@@ -179,6 +175,34 @@ router.post('/:id/advance', requireRole('driver'), (req, res) => {
       url: '/app/booking',
       tag: `order-${order.id}`,
     }).catch((err) => console.error('[push] status notify failed:', err.message))
+  }
+
+  res.json({ order: serializeOrder(updated) })
+})
+
+// The customer confirms they actually received the package — this is the ONLY thing that
+// triggers payment settlement (wallet debit/credit) and unlocks rating in both directions.
+// A driver marking something "delivered" alone moves no money.
+router.post('/:id/confirm-delivery', (req, res) => {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)
+  if (!order) return res.status(404).json({ error: 'Order not found' })
+  if (order.customer_id !== req.user.id) return res.status(403).json({ error: 'Not your order' })
+  if (order.status !== 'delivered') return res.status(409).json({ error: 'This order is not ready to be confirmed yet' })
+
+  db.prepare(`UPDATE orders SET status = 'completed', updated_at = datetime('now') WHERE id = ?`).run(order.id)
+  settleOrder(order)
+
+  const updated = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id)
+  const payload = { order: serializeOrder(updated) }
+  bus.emitToUser(order.customer_id, 'order:update', payload)
+  if (order.rider_id) {
+    bus.emitToUser(order.rider_id, 'order:update', payload)
+    sendPushToUser(order.rider_id, {
+      title: 'Payment received',
+      body: `The customer confirmed delivery — your earning has been added to your wallet.`,
+      url: '/driver',
+      tag: `order-${order.id}`,
+    }).catch((err) => console.error('[push] settlement notify failed:', err.message))
   }
 
   res.json({ order: serializeOrder(updated) })
@@ -227,7 +251,7 @@ router.post('/:id/cancel', (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)
   if (!order) return res.status(404).json({ error: 'Order not found' })
   if (order.customer_id !== req.user.id && order.rider_id !== req.user.id) return res.status(403).json({ error: 'Not your order' })
-  if (['delivered', 'cancelled'].includes(order.status)) return res.status(409).json({ error: 'This order can no longer be cancelled' })
+  if (['delivered', 'completed', 'cancelled'].includes(order.status)) return res.status(409).json({ error: 'This order can no longer be cancelled' })
 
   db.prepare(`UPDATE orders SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?`).run(order.id)
   const updated = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id)
@@ -247,7 +271,7 @@ router.post('/:id/rate', (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)
   if (!order) return res.status(404).json({ error: 'Order not found' })
   if (order.customer_id !== req.user.id) return res.status(403).json({ error: 'Not your order' })
-  if (order.status !== 'delivered') return res.status(409).json({ error: 'You can only rate a completed delivery' })
+  if (order.status !== 'completed') return res.status(409).json({ error: "You can only rate a delivery once it's confirmed" })
   if (order.rating != null) return res.status(409).json({ error: 'You have already rated this delivery' })
 
   db.prepare('UPDATE orders SET rating = ?, rating_comment = ? WHERE id = ?').run(rating, comment, order.id)
@@ -274,7 +298,7 @@ router.post('/:id/rate-customer', requireRole('driver'), (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)
   if (!order) return res.status(404).json({ error: 'Order not found' })
   if (order.rider_id !== req.user.id) return res.status(403).json({ error: 'Not your delivery' })
-  if (order.status !== 'delivered') return res.status(409).json({ error: 'You can only rate a completed delivery' })
+  if (order.status !== 'completed') return res.status(409).json({ error: "You can only rate a delivery once it's confirmed" })
   if (order.customer_rating != null) return res.status(409).json({ error: 'You have already rated this customer' })
 
   db.prepare('UPDATE orders SET customer_rating = ?, customer_rating_comment = ? WHERE id = ?').run(rating, comment, order.id)

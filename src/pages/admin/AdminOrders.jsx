@@ -5,7 +5,7 @@ import { StatusBadge, Card, EmptyState } from '../../components/ui/Misc'
 import { formatNaira, formatDate } from '../../utils/format'
 import LoadMoreButton from '../../components/ui/LoadMoreButton'
 
-const STATUSES = ['all', 'searching', 'enroute', 'arrived', 'in_transit', 'delivered', 'cancelled']
+const STATUSES = ['all', 'searching', 'enroute', 'arrived', 'in_transit', 'delivered', 'completed', 'cancelled']
 const PAGE_SIZE = 20
 
 export default function AdminOrders() {

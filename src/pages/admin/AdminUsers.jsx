@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Search, Ban, CheckCircle2 } from 'lucide-react'
+import { Search, Ban, CheckCircle2, Star } from 'lucide-react'
 import { api, avatarSrc } from '../../lib/api'
 import { formatNaira, formatDate } from '../../utils/format'
 import { Avatar, Card } from '../../components/ui/Misc'
@@ -66,7 +66,14 @@ export default function AdminUsers() {
               <Avatar name={u.name} size={44} src={avatarSrc(u.avatarUrl)} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-bold text-navy-950">{u.name}</p>
-                <p className="truncate text-xs text-slate-muted">{u.phone} · {u.email || 'No email'}</p>
+                <p className="truncate text-xs text-slate-muted">
+                  {u.phone} · {u.email || 'No email'}
+                  {u.customerRatingCount > 0 && (
+                    <span className="ml-1.5 inline-flex items-center gap-0.5 font-semibold text-amber-600">
+                      <Star size={11} className="fill-[#FFB800] text-[#FFB800]" /> {u.customerRating}
+                    </span>
+                  )}
+                </p>
               </div>
               <div className="hidden text-right sm:block">
                 <p className="text-sm font-semibold text-navy-950">{formatNaira(u.walletBalance)}</p>

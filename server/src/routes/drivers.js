@@ -169,7 +169,7 @@ router.get('/earnings', (req, res) => {
   const todayTotal = todayRows.reduce((sum, t) => sum + t.amount, 0)
 
   const tripsToday = db
-    .prepare(`SELECT COUNT(*) as n FROM orders WHERE rider_id = ? AND status = 'delivered' AND date(updated_at) = ?`)
+    .prepare(`SELECT COUNT(*) as n FROM orders WHERE rider_id = ? AND status = 'completed' AND date(updated_at) = ?`)
     .get(req.user.id, today)
 
   res.json({ todayEarnings: todayTotal, tripsToday: tripsToday.n, walletBalance: req.user.wallet_balance })

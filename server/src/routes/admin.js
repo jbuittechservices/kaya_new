@@ -25,15 +25,17 @@ router.get('/stats', (req, res) => {
   const drivers = db.prepare(`SELECT COUNT(*) n FROM users WHERE role = 'driver'`).get().n
   const activeDrivers = db.prepare(`SELECT COUNT(*) n FROM users WHERE role = 'driver' AND status = 'active'`).get().n
   const totalOrders = db.prepare('SELECT COUNT(*) n FROM orders').get().n
-  const deliveredOrders = db.prepare(`SELECT COUNT(*) n FROM orders WHERE status = 'delivered'`).get().n
-  const activeOrders = db.prepare(`SELECT COUNT(*) n FROM orders WHERE status NOT IN ('delivered','cancelled')`).get().n
+  // 'completed' = customer confirmed and payment settled. 'delivered' means the driver
+  // dropped it off but the customer hasn't confirmed yet, so it's still active, not final.
+  const deliveredOrders = db.prepare(`SELECT COUNT(*) n FROM orders WHERE status = 'completed'`).get().n
+  const activeOrders = db.prepare(`SELECT COUNT(*) n FROM orders WHERE status NOT IN ('completed','cancelled')`).get().n
   const cancelledOrders = db.prepare(`SELECT COUNT(*) n FROM orders WHERE status = 'cancelled'`).get().n
-  const gmv = db.prepare(`SELECT COALESCE(SUM(price),0) n FROM orders WHERE status = 'delivered'`).get().n
+  const gmv = db.prepare(`SELECT COALESCE(SUM(price),0) n FROM orders WHERE status = 'completed'`).get().n
   const platformRevenue = Math.round(gmv * 0.15)
 
   const last7 = db
     .prepare(
-      `SELECT date(created_at) as day, COUNT(*) as orders, COALESCE(SUM(CASE WHEN status='delivered' THEN price ELSE 0 END),0) as revenue
+      `SELECT date(created_at) as day, COUNT(*) as orders, COALESCE(SUM(CASE WHEN status='completed' THEN price ELSE 0 END),0) as revenue
        FROM orders WHERE created_at >= datetime('now', '-7 days') GROUP BY day ORDER BY day ASC`
     )
     .all()

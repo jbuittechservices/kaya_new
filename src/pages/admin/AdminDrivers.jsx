@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Search, Ban, CheckCircle2, BadgeCheck, Star, FileText, Eye, ChevronDown } from 'lucide-react'
+import { Search, Ban, CheckCircle2, BadgeCheck, Star, FileText, Eye, ChevronDown, X, AlertCircle } from 'lucide-react'
 import { api, BASE_URL, getToken, avatarSrc } from '../../lib/api'
 import { Avatar, Card } from '../../components/ui/Misc'
 import LoadMoreButton from '../../components/ui/LoadMoreButton'
@@ -14,6 +14,7 @@ export default function AdminDrivers() {
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [expanded, setExpanded] = useState(null)
+  const [viewingDoc, setViewingDoc] = useState(null) // { userId, type, label }
 
   async function load(page = 1, append = false) {
     if (append) setLoadingMore(true)
@@ -41,15 +42,6 @@ export default function AdminDrivers() {
   async function verify(user) {
     await api.patch(`/api/admin/users/${user.id}/verify-driver`)
     setDrivers((prev) => prev.map((u) => (u.id === user.id ? { ...u, onboarding: { personalInfo: true, documents: true, guarantor: true } } : u)))
-  }
-
-  async function viewDocument(userId, type) {
-    const res = await fetch(`${BASE_URL}/api/admin/users/${userId}/documents/${type}/file`, {
-      headers: { Authorization: `Bearer ${getToken()}` },
-    })
-    if (!res.ok) return
-    const blob = await res.blob()
-    window.open(URL.createObjectURL(blob), '_blank', 'noopener')
   }
 
   return (
@@ -129,7 +121,7 @@ export default function AdminDrivers() {
                               <p className="text-sm font-semibold text-navy-950">{DOC_LABELS[type]}</p>
                               <p className="text-xs text-slate-muted">Submitted {new Date(docs[type].uploadedAt).toLocaleDateString()}</p>
                             </div>
-                            <button onClick={() => viewDocument(u.id, type)} className="tap flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-navy-900 shadow-[var(--shadow-card)]">
+                            <button onClick={() => setViewingDoc({ userId: u.id, type, label: DOC_LABELS[type] })} className="tap flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-navy-900 shadow-[var(--shadow-card)]">
                               <Eye size={13} /> View
                             </button>
                           </div>
@@ -168,6 +160,68 @@ export default function AdminDrivers() {
             onClick={() => load(Math.floor(drivers.length / PAGE_SIZE) + 1, true)}
           />
         )}
+      </div>
+
+      {viewingDoc && <DocumentViewerModal doc={viewingDoc} onClose={() => setViewingDoc(null)} />}
+    </div>
+  )
+}
+
+function DocumentViewerModal({ doc, onClose }) {
+  const [status, setStatus] = useState('loading') // 'loading' | 'ready' | 'error'
+  const [objectUrl, setObjectUrl] = useState(null)
+  const [mimeType, setMimeType] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    let createdUrl = null
+
+    fetch(`${BASE_URL}/api/admin/users/${doc.userId}/documents/${doc.type}/file`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`Request failed (${res.status})`)
+        return res.blob()
+      })
+      .then((blob) => {
+        if (cancelled) return
+        createdUrl = URL.createObjectURL(blob)
+        setObjectUrl(createdUrl)
+        setMimeType(blob.type)
+        setStatus('ready')
+      })
+      .catch(() => !cancelled && setStatus('error'))
+
+    return () => {
+      cancelled = true
+      if (createdUrl) URL.revokeObjectURL(createdUrl)
+    }
+  }, [doc.userId, doc.type])
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-navy-950/70 p-4" onClick={onClose}>
+      <div className="max-h-[85vh] w-full max-w-lg overflow-hidden rounded-3xl bg-white" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-navy-900/8 px-5 py-4">
+          <p className="text-sm font-bold text-navy-950">{doc.label}</p>
+          <button onClick={onClose} className="tap flex h-8 w-8 items-center justify-center rounded-full bg-navy-900/5">
+            <X size={16} className="text-navy-900" />
+          </button>
+        </div>
+        <div className="flex max-h-[70vh] items-center justify-center overflow-auto bg-navy-900/5 p-4">
+          {status === 'loading' && <p className="py-12 text-sm text-slate-muted">Loading document…</p>}
+          {status === 'error' && (
+            <div className="flex flex-col items-center gap-2 py-12 text-center">
+              <AlertCircle size={24} className="text-danger" />
+              <p className="text-sm font-medium text-danger">Couldn't load this document. Try again.</p>
+            </div>
+          )}
+          {status === 'ready' && mimeType === 'application/pdf' && (
+            <iframe src={objectUrl} title={doc.label} className="h-[65vh] w-full rounded-xl bg-white" />
+          )}
+          {status === 'ready' && mimeType !== 'application/pdf' && (
+            <img src={objectUrl} alt={doc.label} className="max-h-[65vh] w-full rounded-xl object-contain" />
+          )}
+        </div>
       </div>
     </div>
   )
