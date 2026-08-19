@@ -3,6 +3,7 @@ import { db, uid } from '../db.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { serializeOrder } from '../utils/serialize.js'
 import * as bus from '../sockets/bus.js'
+import { sendPushToUser, sendPushToActiveDrivers } from '../utils/push.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -51,8 +52,15 @@ router.post('/', (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(id)
   const payload = serializeOrder(order)
 
-  // Notify every online driver of the new request in real time
+  // Notify every online driver in real time, and push to any driver who has
+  // notifications enabled even if their app is closed/backgrounded right now.
   bus.broadcastToOnlineDrivers('order:incoming', payload)
+  sendPushToActiveDrivers({
+    title: 'New delivery request',
+    body: `${pickup} → ${dropoff} · ₦${price.toLocaleString()}`,
+    url: '/driver',
+    tag: 'order-incoming',
+  }).catch((err) => console.error('[push] driver broadcast failed:', err.message))
 
   res.status(201).json({ order: payload })
 })
@@ -114,6 +122,12 @@ router.post('/:id/accept', requireRole('driver'), (req, res) => {
 
   bus.emitToUser(order.customer_id, 'order:update', { order: serializeOrder(updated), rider, conversationId: convoId })
   bus.broadcastToOnlineDrivers('order:taken', { orderId: order.id }, req.user.id)
+  sendPushToUser(order.customer_id, {
+    title: 'Rider found!',
+    body: `${req.user.name} is on the way to pick up your delivery`,
+    url: '/app/booking',
+    tag: `order-${order.id}`,
+  }).catch((err) => console.error('[push] accept notify failed:', err.message))
 
   res.json({ order: serializeOrder(updated), customer, conversationId: convoId })
 })
@@ -138,6 +152,21 @@ router.post('/:id/advance', requireRole('driver'), (req, res) => {
 
   const updated = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id)
   bus.emitToUser(order.customer_id, 'order:update', { order: serializeOrder(updated) })
+
+  const STATUS_PUSH_COPY = {
+    arrived: 'Your rider has arrived at the pickup point',
+    in_transit: 'Your package is on its way',
+    delivered: 'Delivered! Tap to rate your rider',
+  }
+  if (STATUS_PUSH_COPY[nextStatus]) {
+    sendPushToUser(order.customer_id, {
+      title: 'Kaya delivery update',
+      body: STATUS_PUSH_COPY[nextStatus],
+      url: '/app/booking',
+      tag: `order-${order.id}`,
+    }).catch((err) => console.error('[push] status notify failed:', err.message))
+  }
+
   res.json({ order: serializeOrder(updated) })
 })
 

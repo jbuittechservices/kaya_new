@@ -85,21 +85,35 @@ skips accounts that already exist).
   (chat with customers), **Account** (profile, vehicle/plate, verification status, password)
 - Reports real device location over Socket.IO while a delivery is active, so the customer's map
   shows where the rider actually is, not just a simulated position
+- **Real document upload for verification** (ID + driver's license) — stored on disk, validated
+  by file type and size, served back only to the owning driver or an admin (never publicly)
 
 **Admin dashboard** (`/admin`)
 - Overview stats: users, riders, active/completed/cancelled orders, GMV, platform revenue, a
   7-day revenue chart
 - Customers: search/filter, suspend/reactivate accounts
-- Riders: search, verify onboarding, suspend/reactivate
+- Riders: search, **review submitted ID/license documents before approving**, verify onboarding,
+  suspend/reactivate
 - Orders: full list with filters, customer/rider attribution
 - Transactions: full ledger across the platform, including pending rider withdrawals
+- Every list is paginated at the SQL level (not "load the whole table into memory"), verified
+  against 250+ synthetic rows
+
+**Push notifications**
+- Real Web Push (VAPID) — new delivery requests reach drivers even with the app closed, and
+  customers get pushed on rider-found / arrived / delivered / new-message, all with a working
+  notification-click that focuses or opens the app to the right screen
+- A per-user opt-in toggle in Account settings on both apps; gracefully absent/no-ops everywhere
+  if you haven't configured VAPID keys yet, so nothing breaks without it
 
 **Platform mechanics**
 - JWT-authenticated REST API, rate-limited on both auth and general API traffic, Helmet security
   headers, a top-level React error boundary so a render crash shows a recoverable screen instead
   of a blank page
-- Real dispatch: orders broadcast to online drivers, first to accept wins, race-condition safe
-- Wallet ledgering with a 15% platform fee split on delivery, real transaction history
+- Real dispatch: orders broadcast to online drivers, first to accept wins, race-condition safe —
+  proven with 5 simultaneous accept attempts on the same order, not just reasoned about
+- Wallet ledgering with a 15% platform fee split on delivery, real transaction history, and a
+  wallet balance that's mathematically guaranteed to never go negative
 - Rider withdrawals: debits the wallet immediately and logs a pending payout for finance to
   action — wire it to Paystack Transfers to automate the actual bank payout
 - Paystack integration for wallet top-ups (falls back to instant simulated credit if you haven't
@@ -109,6 +123,8 @@ skips accounts that already exist).
 - Real Google Maps throughout (address autocomplete, live route + markers, real-time rider
   position) — falls back to an illustrated placeholder map when no API key is configured
 - Real Kaya brand (logo, `#00ABFD` blue / white / black) applied throughout both apps
+- **22 automated regression tests** (`npm test` in `server/`) covering every bug found during
+  hardening — see "Automated tests" below
 
 ## Environment variables
 
@@ -123,13 +139,33 @@ VITE_GOOGLE_MAPS_API_KEY=        # optional — see "Maps & address autocomplete
 PORT=4000
 CORS_ORIGIN=http://localhost:5173
 JWT_SECRET=...                  # generate with: openssl rand -hex 32
-DATA_DIR=./data                 # where kaya.db lives
-SMS_PROVIDER_URL=               # leave blank in dev — OTPs print to console
-SMS_PROVIDER_KEY=
+DATA_DIR=./data                 # where kaya.db (and uploaded documents) live
+TWILIO_ACCOUNT_SID=              # leave blank in dev — OTPs print to console instead
+TWILIO_AUTH_TOKEN=
+TWILIO_MESSAGING_SERVICE_SID=    # or TWILIO_FROM_NUMBER — see "SMS / OTP delivery" below
 PAYSTACK_SECRET_KEY=            # leave blank in dev — top-ups are simulated instantly
 PAYSTACK_CALLBACK_URL=
+VAPID_PUBLIC_KEY=               # leave blank in dev — push sends silently no-op
+VAPID_PRIVATE_KEY=              # generate with: npx web-push generate-vapid-keys
+VAPID_SUBJECT=mailto:support@yourapp.com
 SEED_ADMIN_PASSWORD=
 ```
+
+## Automated tests
+
+```bash
+cd server
+npm test
+```
+
+22 tests, all exercising the real Express app over real HTTP against a fresh throwaway SQLite
+database (spun up and torn down per run) — not mocks. They cover the exact bugs found during
+hardening, so they act as regression tests: wallet balance can never go negative, ratings are
+validated and can't be submitted twice, a driver can't self-verify their own documents, admin
+pagination is clamped and can't be forced unbounded, a suspended account is rejected everywhere
+(login, REST, with the right error code), OTP requests are cooldown-limited, and — the two most
+important ones — 5 simultaneous accept requests on one order resolve to exactly 1 success, and
+concurrent withdrawal requests can never overdraw a wallet.
 
 ## Going to production
 
@@ -245,13 +281,27 @@ Built in and already tested:
 - Delivery happens *before* the code is stored, so a failed send never leaves a code in the
   database that the user can never actually receive
 
-### 5. Database
+### 5. Database & uploaded files
 
-`node:sqlite` writes to `server/data/kaya.db`. Back this file up regularly (a cron'd `cp` to S3
-or similar is enough at this scale). If you outgrow SQLite, the queries in `server/src/routes/*`
-are plain SQL and port to Postgres/MySQL with minimal changes since there's no ORM in the way.
+`node:sqlite` writes to `server/data/kaya.db`, and driver-submitted verification documents (ID,
+license) are stored under `server/data/uploads/`. Back both up regularly (a cron'd `cp`/`rsync`
+to S3 or similar is enough at this scale) — if you're on Railway/Render, put both on the same
+persistent volume so a redeploy doesn't wipe them. If you outgrow SQLite, the queries in
+`server/src/routes/*` are plain SQL and port to Postgres/MySQL with minimal changes since there's
+no ORM in the way; document files can move to S3/R2 with a similar amount of effort.
 
-### 6. Maps & address autocomplete
+### 6. Push notifications
+
+1. Generate a VAPID keypair once: `cd server && npx web-push generate-vapid-keys`.
+2. Set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` (a `mailto:` address or your
+   site's URL — required by the Web Push spec so push services can contact you about your app).
+3. Rebuild and redeploy. No frontend env var needed — the public key is fetched from the API at
+   runtime, so rotating it later doesn't require a frontend rebuild.
+
+Without these set, every push send silently no-ops (logged, never thrown) so nothing else in the
+app is affected — order creation, chat, everything keeps working exactly the same either way.
+
+### 7. Maps & address autocomplete
 
 Real Google Maps power three things once you add a key: address autocomplete on every location
 field, a live map with pickup/dropoff markers and the driving route, and an approximate moving

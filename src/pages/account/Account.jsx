@@ -9,6 +9,7 @@ import { Avatar, Card } from '../../components/ui/Misc'
 import Input from '../../components/ui/Input'
 import PlacesAutocompleteInput from '../../components/ui/PlacesAutocomplete'
 import Button from '../../components/ui/Button'
+import NotificationsToggle from '../../components/ui/NotificationsToggle'
 
 const TABS = [
   { id: 'profile', label: 'Profile' },
@@ -225,6 +226,7 @@ function SecurityTab() {
 
   return (
     <div className="space-y-5">
+      <NotificationsToggle />
       <form onSubmit={submit} className="space-y-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
         <p className="text-sm font-bold text-navy-950">Change password</p>
         <Input label="Current password" type="password" value={form.current} onChange={(e) => setForm({ ...form, current: e.target.value })} required />

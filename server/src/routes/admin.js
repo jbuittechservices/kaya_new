@@ -1,5 +1,7 @@
 import { Router } from 'express'
-import { db } from '../db.js'
+import path from 'node:path'
+import fs from 'node:fs'
+import { db, DATA_DIR } from '../db.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { serializeUser, serializeOrder, serializeTransaction } from '../utils/serialize.js'
 import * as bus from '../sockets/bus.js'
@@ -96,6 +98,25 @@ router.patch('/users/:id/status', (req, res) => {
     bus.disconnectUser(req.params.id)
   }
   res.json({ user: serializeUser(user) })
+})
+
+router.get('/users/:id/documents', (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
+  if (!user || user.role !== 'driver') return res.status(404).json({ error: 'Driver not found' })
+  const documents = user.documents_json ? JSON.parse(user.documents_json) : {}
+  res.json({ documents })
+})
+
+router.get('/users/:id/documents/:type/file', (req, res) => {
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
+  if (!user || user.role !== 'driver') return res.status(404).json({ error: 'Driver not found' })
+  const documents = user.documents_json ? JSON.parse(user.documents_json) : {}
+  const doc = documents[req.params.type]
+  if (!doc) return res.status(404).json({ error: 'Document not found' })
+  const filePath = path.join(DATA_DIR, 'uploads', 'drivers', user.id, doc.filename)
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Document not found' })
+  res.setHeader('Content-Type', doc.mimeType)
+  res.sendFile(filePath)
 })
 
 router.patch('/users/:id/verify-driver', (req, res) => {

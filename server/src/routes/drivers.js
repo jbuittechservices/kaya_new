@@ -1,7 +1,45 @@
 import { Router } from 'express'
-import { db, uid } from '../db.js'
+import multer from 'multer'
+import path from 'node:path'
+import fs from 'node:fs'
+import { db, uid, DATA_DIR } from '../db.js'
 import { requireAuth, requireRole } from '../middleware/auth.js'
 import { serializeUser } from '../utils/serialize.js'
+
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads', 'drivers')
+fs.mkdirSync(UPLOADS_DIR, { recursive: true })
+
+const ALLOWED_DOC_TYPES = ['id', 'license']
+const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf'])
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, _file, cb) => {
+      const dir = path.join(UPLOADS_DIR, req.user.id)
+      fs.mkdirSync(dir, { recursive: true })
+      cb(null, dir)
+    },
+    filename: (req, file, cb) => {
+      const type = ALLOWED_DOC_TYPES.includes(req.body.type) ? req.body.type : 'doc'
+      const ext = path.extname(file.originalname).slice(0, 10).replace(/[^a-zA-Z0-9.]/g, '')
+      cb(null, `${type}-${Date.now()}${ext}`)
+    },
+  }),
+  limits: { fileSize: 8 * 1024 * 1024 }, // 8MB
+  fileFilter: (req, file, cb) => {
+    if (!ALLOWED_DOC_TYPES.includes(req.body.type)) {
+      const err = new Error('Invalid document type')
+      err.status = 400
+      return cb(err)
+    }
+    if (!ALLOWED_MIME.has(file.mimetype)) {
+      const err = new Error('Only JPEG, PNG, WebP, or PDF files are allowed')
+      err.status = 400
+      return cb(err)
+    }
+    cb(null, true)
+  },
+})
 
 const router = Router()
 router.use(requireAuth, requireRole('driver'))
@@ -16,6 +54,50 @@ router.get('/me', (req, res) => {
 // "verified" with zero real vetting. Those two can only change via
 // PATCH /api/admin/users/:id/verify-driver.
 const SELF_SERVICE_ONBOARDING_FIELDS = ['personalInfo']
+
+function handleUpload(req, res, next) {
+  upload.single('file')(req, res, (err) => {
+    if (!err) return next()
+    if (err instanceof multer.MulterError || err.status === 400) {
+      return res.status(400).json({ error: err.message })
+    }
+    next(err)
+  })
+}
+
+router.post('/documents', handleUpload, (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' })
+  const type = req.body.type
+
+  const current = req.user.documents_json ? JSON.parse(req.user.documents_json) : {}
+  // Remove any previous file for this document type so we don't accumulate orphans on re-upload
+  if (current[type]?.filename) {
+    const oldPath = path.join(UPLOADS_DIR, req.user.id, current[type].filename)
+    fs.rm(oldPath, { force: true }, () => {})
+  }
+  current[type] = { filename: req.file.filename, mimeType: req.file.mimetype, uploadedAt: new Date().toISOString() }
+  db.prepare('UPDATE users SET documents_json = ? WHERE id = ?').run(JSON.stringify(current), req.user.id)
+
+  res.status(201).json({ documents: current })
+})
+
+router.get('/documents', (req, res) => {
+  const documents = req.user.documents_json ? JSON.parse(req.user.documents_json) : {}
+  res.json({ documents })
+})
+
+// Serves a driver's own uploaded document. Admin access to any driver's documents is a
+// separate route in admin.js with its own admin-role check — this one only ever serves
+// the requesting driver's own file.
+router.get('/documents/:type/file', (req, res) => {
+  const documents = req.user.documents_json ? JSON.parse(req.user.documents_json) : {}
+  const doc = documents[req.params.type]
+  if (!doc) return res.status(404).json({ error: 'Document not found' })
+  const filePath = path.join(UPLOADS_DIR, req.user.id, doc.filename)
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Document not found' })
+  res.setHeader('Content-Type', doc.mimeType)
+  res.sendFile(filePath)
+})
 
 router.patch('/onboarding', (req, res) => {
   const current = req.user.onboarding_json ? JSON.parse(req.user.onboarding_json) : {}

@@ -1,15 +1,17 @@
 import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { LogOut, ChevronRight, Check, Camera, Package, Star } from 'lucide-react'
+import { LogOut, ChevronRight, Check, Camera, Package, Star, Upload, FileCheck2, Clock } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { Avatar, Card } from '../../components/ui/Misc'
 import Input from '../../components/ui/Input'
 import Button from '../../components/ui/Button'
-import { api } from '../../lib/api'
+import { api, BASE_URL, getToken } from '../../lib/api'
+import NotificationsToggle from '../../components/ui/NotificationsToggle'
 
 const TABS = [
   { id: 'profile', label: 'Profile' },
   { id: 'vehicle', label: 'Vehicle' },
+  { id: 'documents', label: 'Documents' },
   { id: 'security', label: 'Privacy & security' },
 ]
 
@@ -46,6 +48,7 @@ export default function DriverAccount() {
       <div className="mt-5">
         {tab === 'profile' && <ProfileTab user={user} updateProfile={updateProfile} />}
         {tab === 'vehicle' && <VehicleTab user={user} refreshUser={refreshUser} />}
+        {tab === 'documents' && <DocumentsTab user={user} refreshUser={refreshUser} />}
         {tab === 'security' && <SecurityTab />}
       </div>
 
@@ -176,6 +179,91 @@ function VehicleTab({ user, refreshUser }) {
   )
 }
 
+const DOC_TYPES = [
+  { id: 'id', label: 'Government-issued ID', desc: "National ID, driver's license, or international passport" },
+  { id: 'license', label: "Driver's license", desc: 'A clear photo or scan of a valid license' },
+]
+
+function DocumentsTab({ user, refreshUser }) {
+  const [uploading, setUploading] = useState(null)
+  const [error, setError] = useState(null)
+  const documents = user?.documents || {}
+  const verified = !!user?.onboarding?.documents
+
+  async function handleFile(type, file) {
+    if (!file) return
+    setError(null)
+    setUploading(type)
+    try {
+      const form = new FormData()
+      // 'type' must be appended before 'file' — the server reads it while streaming
+      // the upload and uses it to name the file as it's written to disk.
+      form.append('type', type)
+      form.append('file', file)
+      const res = await fetch(`${BASE_URL}/api/drivers/documents`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${getToken()}` },
+        body: form,
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Upload failed')
+      await refreshUser()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setUploading(null)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-bold text-navy-950">Verification status</p>
+          <p className="text-xs text-slate-muted">Reviewed by the Kaya team after both documents are submitted</p>
+        </div>
+        <span className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${verified ? 'bg-success/10 text-success' : 'bg-amber-100 text-amber-700'}`}>
+          {verified ? <FileCheck2 size={13} /> : <Clock size={13} />} {verified ? 'Verified' : 'Pending review'}
+        </span>
+      </Card>
+
+      {error && <p className="text-sm font-medium text-danger">{error}</p>}
+
+      {DOC_TYPES.map((doc) => {
+        const uploaded = documents[doc.id]
+        const isUploading = uploading === doc.id
+        return (
+          <Card key={doc.id}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-navy-950">{doc.label}</p>
+                <p className="text-xs text-slate-muted">{doc.desc}</p>
+                {uploaded && <p className="mt-1 text-xs font-medium text-success">Uploaded — {new Date(uploaded.uploadedAt).toLocaleDateString()}</p>}
+              </div>
+              <label className="tap flex shrink-0 cursor-pointer items-center gap-1.5 rounded-2xl border border-navy-900/15 px-3.5 py-2.5 text-xs font-semibold text-navy-900">
+                {isUploading ? (
+                  'Uploading…'
+                ) : (
+                  <>
+                    <Upload size={14} /> {uploaded ? 'Replace' : 'Upload'}
+                  </>
+                )}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,application/pdf"
+                  className="hidden"
+                  disabled={isUploading}
+                  onChange={(e) => handleFile(doc.id, e.target.files?.[0])}
+                />
+              </label>
+            </div>
+          </Card>
+        )
+      })}
+    </div>
+  )
+}
+
 function SecurityTab() {
   const [form, setForm] = useState({ current: '', next: '', confirm: '' })
   const [status, setStatus] = useState(null)
@@ -201,15 +289,18 @@ function SecurityTab() {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
-      <p className="text-sm font-bold text-navy-950">Change password</p>
-      <Input label="Current password" type="password" value={form.current} onChange={(e) => setForm({ ...form, current: e.target.value })} required />
-      <Input label="New password" type="password" value={form.next} onChange={(e) => setForm({ ...form, next: e.target.value })} required minLength={8} />
-      <Input label="Confirm new password" type="password" value={form.confirm} onChange={(e) => setForm({ ...form, confirm: e.target.value })} required />
-      {status && <p className={`text-sm font-medium ${status.type === 'error' ? 'text-danger' : 'text-success'}`}>{status.text}</p>}
-      <Button type="submit" full disabled={busy}>
-        {busy ? 'Updating…' : 'Update password'}
-      </Button>
-    </form>
+    <div className="space-y-5">
+      <NotificationsToggle />
+      <form onSubmit={submit} className="space-y-3 rounded-2xl bg-white p-4 shadow-[var(--shadow-card)]">
+        <p className="text-sm font-bold text-navy-950">Change password</p>
+        <Input label="Current password" type="password" value={form.current} onChange={(e) => setForm({ ...form, current: e.target.value })} required />
+        <Input label="New password" type="password" value={form.next} onChange={(e) => setForm({ ...form, next: e.target.value })} required minLength={8} />
+        <Input label="Confirm new password" type="password" value={form.confirm} onChange={(e) => setForm({ ...form, confirm: e.target.value })} required />
+        {status && <p className={`text-sm font-medium ${status.type === 'error' ? 'text-danger' : 'text-success'}`}>{status.text}</p>}
+        <Button type="submit" full disabled={busy}>
+          {busy ? 'Updating…' : 'Update password'}
+        </Button>
+      </form>
+    </div>
   )
 }

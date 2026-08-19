@@ -33,4 +33,8 @@ export function checkEnv() {
   if (!process.env.PAYSTACK_SECRET_KEY) {
     console.warn('⚠ Paystack is not configured — wallet top-ups will be credited instantly (simulated).')
   }
+
+  if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
+    console.warn('⚠ Push notifications are not configured — order/message pushes will silently no-op. Run `npx web-push generate-vapid-keys` to set VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY.')
+  }
 }

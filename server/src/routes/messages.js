@@ -3,6 +3,7 @@ import { db, uid } from '../db.js'
 import { requireAuth } from '../middleware/auth.js'
 import { serializeMessage } from '../utils/serialize.js'
 import * as bus from '../sockets/bus.js'
+import { sendPushToUser } from '../utils/push.js'
 
 const router = Router()
 router.use(requireAuth)
@@ -54,6 +55,12 @@ router.post('/:id/messages', (req, res) => {
 
   const recipientId = convo.customer_id === req.user.id ? convo.rider_id : convo.customer_id
   bus.emitToUser(recipientId, 'message:new', { conversationId: convo.id, message })
+  sendPushToUser(recipientId, {
+    title: req.user.name,
+    body: text.trim().slice(0, 120),
+    url: req.user.role === 'driver' ? `/app/messages/${convo.id}` : `/driver/messages/${convo.id}`,
+    tag: `chat-${convo.id}`,
+  }).catch((err) => console.error('[push] message notify failed:', err.message))
 
   res.status(201).json({ message })
 })

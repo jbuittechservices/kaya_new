@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data')
+export const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data')
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
 
 const DB_PATH = path.join(DATA_DIR, 'kaya.db')
@@ -133,6 +133,19 @@ ensureColumn('saved_locations', 'lng', 'lng REAL')
 ensureColumn('users', 'bank_name', 'bank_name TEXT')
 ensureColumn('users', 'bank_account_number', 'bank_account_number TEXT')
 ensureColumn('users', 'bank_account_name', 'bank_account_name TEXT')
+ensureColumn('users', 'documents_json', 'documents_json TEXT')
+
+db.exec(`
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_id);
+`)
 
 export function uid(prefix = 'id') {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`

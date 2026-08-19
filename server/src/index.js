@@ -16,6 +16,7 @@ import messageRoutes from './routes/messages.js'
 import driverRoutes from './routes/drivers.js'
 import adminRoutes from './routes/admin.js'
 import webhookRoutes from './routes/webhooks.js'
+import pushRoutes from './routes/push.js'
 import { initSockets } from './sockets/index.js'
 
 const app = express()
@@ -49,6 +50,7 @@ app.use('/api/wallet', walletRoutes)
 app.use('/api/messages', messageRoutes)
 app.use('/api/drivers', driverRoutes)
 app.use('/api/admin', adminRoutes)
+app.use('/api/push', pushRoutes)
 
 app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }))
 

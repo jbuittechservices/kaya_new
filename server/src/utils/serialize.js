@@ -16,6 +16,7 @@ export function serializeUser(u) {
     bankName: u.bank_name,
     bankAccountNumber: u.bank_account_number,
     bankAccountName: u.bank_account_name,
+    documents: u.documents_json ? JSON.parse(u.documents_json) : {},
     onboarding: u.onboarding_json ? JSON.parse(u.onboarding_json) : null,
     createdAt: u.created_at,
   }
